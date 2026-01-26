@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 引入 Spring Boot 默认配置 -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- 应用名称 -->
+    <property name="APP_NAME" value="cybotstar-sdk"/>
+
+    <!-- 日志输出格式：参考标准格式，统一使用应用名称和线程名 -->
+    <property name="ENCODER_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [${APP_NAME}] [%thread] %highlight(%-5level) [%logger{50}] - %msg%n"/>
+
+    <!-- 统一使用标准格式的控制台输出（带颜色） -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>${ENCODER_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 统一所有日志使用相同的格式 -->
+    <!-- 日志级别可以通过 Spring Boot 的 logging.level 配置或 yml 中的 cybotstar.flows.*.log.log-level 配置 -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+    
+    <!-- Flow 日志级别由代码动态设置，根据 yml 配置中的 cybotstar.flows.*.log.log-level -->
+    <!-- 不再硬编码 DEBUG 级别，避免覆盖 yml 配置 -->
+</configuration>

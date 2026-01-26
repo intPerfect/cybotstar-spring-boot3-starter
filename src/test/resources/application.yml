@@ -1,0 +1,88 @@
+spring:
+  application:
+    name: cybotstar-sdk
+
+# 多配置格式：支持在同一个配置文件中配置多个 Agent 和 Flow
+cybotstar:
+  agents:
+    finance-agent:
+      credentials:
+        robot-key: 5Gi6hxiS%2BY2sdhddieQJ60ejigw%3D
+        robot-token: MTc2NjM5MDE5MDgxNQo4ZWtxSTg5RE85ODNpbTRrYlNKY2cwVUYwMzg9
+        username: zhiyuan.xi
+      websocket:
+        url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
+        timeout: 10000
+        max-retries: 3
+        retry-interval: 1000
+        auto-reconnect: true
+        heartbeat-interval: 30000
+      http:
+        url: https://www.cybotstar.cn/openapi/v2/
+        connect-timeout: 30000
+        read-timeout: 30000
+        write-timeout: 30000
+      log:
+        log-level: info
+
+    deepseek-r1:
+      credentials:
+        robot-key: zfA14oBkH3oCPiKku0cVejceiZ8%3D
+        robot-token: MTc2Nzg1MjMwMTczMgpnSXJSNGJvYlgyVmJPYnpHTEVqWDZtbi96c1k9
+        username: zhiyuan.xi
+      websocket:
+        url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
+        timeout: 10000
+        max-retries: 3
+        retry-interval: 1000
+        auto-reconnect: true
+        heartbeat-interval: 30000
+      http:
+        url: https://www.cybotstar.cn/openapi/v2/
+        connect-timeout: 30000
+        read-timeout: 30000
+        write-timeout: 30000
+      log:
+        log-level: info
+
+  flows:
+    ir-flow:
+      credentials:
+        robot-key: eUcVubcBHozrX2ew2BIj8X1wbqk%3D
+        robot-token: MTc2Mzk3ODkyNjAzNwpkcU5LbVNKVnZoM0pWaFE3U2lEY3U0aWQxc009
+        username: zhiyuan.xi
+      flow:
+        open-flow-trigger: direct
+        open-flow-uuid: d47e4dce-e07c-11f0-a7be-4a046c124f65
+        open-flow-debug: false
+      websocket:
+        url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
+        timeout: 10000
+        max-retries: 3
+        retry-interval: 1000
+        auto-reconnect: true
+        heartbeat-interval: 30000
+      http:
+        url: https://www.cybotstar.cn/openapi/v2/
+      log:
+        log-level: info
+
+    test-flow:
+      credentials:
+        robot-key: adkgId%2F3Xb8zmrbCwWd%2Bm4boVb4%3D
+        robot-token: MTc2NjgxNjYxNzgzNAo2K0ZCSTJQMzBGMTZlNUpFdkE1M1l2RllDZTg9
+        username: zhiyuan.xi
+      flow:
+        open-flow-trigger: direct
+        open-flow-uuid: f9e4dc16-e196-11f0-83fb-2a0c9eeaa681
+      websocket:
+        url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
+        timeout: 10000
+        max-retries: 3
+        retry-interval: 1000
+        auto-reconnect: true
+        heartbeat-interval: 30000
+      http:
+        url: https://www.cybotstar.cn/openapi/v2/
+      log:
+        log-level: info

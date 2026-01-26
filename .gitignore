@@ -1,0 +1,170 @@
+# =========================
+# Maven
+# =========================
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# =========================
+# Compiled class files
+# =========================
+*.class
+
+# =========================
+# Log files
+# =========================
+*.log
+logs/
+log/
+
+# =========================
+# Package Files
+# =========================
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# =========================
+# Spring Boot
+# =========================
+spring-boot-*.log
+application-*.properties
+application-*.yml
+!application.yml.example
+!application.properties.example
+
+# =========================
+# JavaFX
+# =========================
+javafx-libs/
+*.fxml.bak
+
+# =========================
+# IDE - IntelliJ IDEA
+# =========================
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# =========================
+# IDE - Eclipse
+# =========================
+.classpath
+.project
+.settings/
+bin/
+.metadata/
+*.launch
+*.pydevproject
+.cproject
+
+# =========================
+# IDE - NetBeans
+# =========================
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# =========================
+# IDE - VS Code
+# =========================
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# =========================
+# Lombok
+# =========================
+lombok.config
+
+# =========================
+# Annotation Processors
+# =========================
+generated-sources/
+generated-test-sources/
+annotations/
+
+# =========================
+# Test Reports
+# =========================
+surefire-reports/
+test-results/
+*.test
+coverage/
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# =========================
+# Temporary Files
+# =========================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+*.bak
+*.cache
+.cache/
+
+# =========================
+# Archive Files
+# =========================
+archive-tmp/
+*.orig
+
+# =========================
+# Maven Wrapper (可选，如果使用Maven Wrapper)
+# =========================
+# .mvn/wrapper/maven-wrapper.properties
+
+# =========================
+# Application Specific
+# =========================
+# 配置文件（如果包含敏感信息）
+# application-local.yml
+# application-dev.yml
+# application-prod.yml
+
+# 运行时脚本（如果包含敏感配置）
+# run-local.bat
+# run-local.sh
+
