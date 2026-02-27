@@ -2,10 +2,10 @@ package com.brgroup.cybotstar.agent;
 
 import com.brgroup.cybotstar.config.AgentConfig;
 import com.brgroup.cybotstar.agent.model.MessageParam;
-import com.brgroup.cybotstar.connection.ReactiveConnectionManager;
+import com.brgroup.cybotstar.connection.ConnectionManager;
 import com.brgroup.cybotstar.agent.exception.AgentException;
-import com.brgroup.cybotstar.agent.session.ReactiveSessionContext;
-import com.brgroup.cybotstar.agent.session.ReactiveSessionContextManager;
+import com.brgroup.cybotstar.agent.session.SessionContext;
+import com.brgroup.cybotstar.agent.session.SessionContextManager;
 import com.brgroup.cybotstar.agent.internal.RequestBuilder;
 import com.brgroup.cybotstar.agent.model.ExtendedSendOptions;
 import com.brgroup.cybotstar.agent.model.ModelOptions;
@@ -40,10 +40,10 @@ public class AgentClient implements DisposableBean {
     private final AgentConfig config;
 
     @NonNull
-    private final ReactiveConnectionManager connectionManager;
+    private final ConnectionManager connectionManager;
 
     @NonNull
-    private final ReactiveSessionContextManager sessionManager;
+    private final SessionContextManager sessionManager;
 
     // 使用 ThreadLocal 支持并发调用
     private final ThreadLocal<RequestBuilder> requestBuilderHolder = ThreadLocal.withInitial(RequestBuilder::new);
@@ -64,8 +64,8 @@ public class AgentClient implements DisposableBean {
     public AgentClient(@NonNull AgentConfig config) {
         CybotStarUtils.validateConfig(config);
         this.config = config;
-        this.connectionManager = new ReactiveConnectionManager(config);
-        this.sessionManager = new ReactiveSessionContextManager(connectionManager);
+        this.connectionManager = new ConnectionManager(config);
+        this.sessionManager = new SessionContextManager(connectionManager);
         log.debug("ReactiveAgentClient initialized, URL: {}", config.getWebsocket().getUrl());
     }
 
@@ -293,7 +293,7 @@ public class AgentClient implements DisposableBean {
      * 获取会话上下文（同步方法，用于兼容旧 API）
      */
     @NonNull
-    public ReactiveSessionContext getSessionContext(@NonNull String sessionId) {
+    public SessionContext getSessionContext(@NonNull String sessionId) {
         return sessionManager.getContext(sessionId).block();
     }
 

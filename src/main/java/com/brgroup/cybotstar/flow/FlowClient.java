@@ -2,8 +2,7 @@ package com.brgroup.cybotstar.flow;
 
 import com.brgroup.cybotstar.config.AgentConfig;
 import com.brgroup.cybotstar.config.FlowConfig;
-import com.brgroup.cybotstar.connection.SingleConnectionManager;
-import com.brgroup.cybotstar.connection.WebSocketConnection;
+import com.brgroup.cybotstar.connection.ConnectionManager;
 import com.brgroup.cybotstar.flow.model.FlowData;
 import com.brgroup.cybotstar.flow.model.FlowEventType;
 import com.brgroup.cybotstar.flow.model.FlowState;
@@ -11,7 +10,6 @@ import com.brgroup.cybotstar.flow.model.handler.FlowHandler;
 import com.brgroup.cybotstar.flow.model.handler.MessageHandler;
 import com.brgroup.cybotstar.flow.model.vo.*;
 import com.brgroup.cybotstar.flow.util.FlowVOExtractor;
-import com.brgroup.cybotstar.handler.GenericErrorHandler;
 import com.brgroup.cybotstar.flow.exception.FlowException;
 import com.brgroup.cybotstar.model.common.ConnectionState;
 import com.brgroup.cybotstar.model.common.ResponseType;
@@ -23,20 +21,21 @@ import com.brgroup.cybotstar.flow.util.FlowUtils;
 import com.alibaba.fastjson2.JSON;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.publisher.Sinks;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Flow 运行时引擎
- * 事件订阅保持回调风格，控制方法返回 Mono
+ * 响应式 Flow 运行时引擎
+ * 完全基于 Project Reactor 的响应式实现
  *
  * @author zhiyuan.xi
  */
@@ -45,27 +44,31 @@ public class FlowClient {
 
     @Getter
     private final FlowConfig config;
-    private FlowState flowState = FlowState.IDLE;
-    private final SingleConnectionManager connectionManager;
-    private final GenericErrorHandler errorHandler;
-    private final Map<FlowEventType, Object> typedHandlerMap = new ConcurrentHashMap<>();
-    private CompletableFuture<Void> completionFuture;
-    private String abortReason;
-    private WebSocketConnection.WSMessageHandler messageHandler;
-    @Getter
-    private String sessionId;
-    private boolean historyExtracted = false;
-    private CompletableFuture<Void> connectionFuture;
 
-    public FlowClient(FlowConfig config) {
+    private final AtomicReference<FlowState> flowState = new AtomicReference<>(FlowState.IDLE);
+
+    @NonNull
+    private final ConnectionManager connectionManager;
+
+    private final Map<FlowEventType, Object> typedHandlerMap = new ConcurrentHashMap<>();
+
+    @Getter
+    private final AtomicReference<String> sessionId = new AtomicReference<>();
+
+    private final AtomicBoolean historyExtracted = new AtomicBoolean(false);
+
+    private final AtomicReference<String> abortReason = new AtomicReference<>();
+
+    // 完成信号 Sink
+    private final Sinks.One<Void> completionSink = Sinks.one();
+
+    public FlowClient(@NonNull FlowConfig config) {
         this.config = config;
         AgentConfig properties = AgentConfig.builder()
                 .credentials(config.getCredentials())
                 .websocket(config.getWebsocket())
                 .build();
-        this.connectionManager = new SingleConnectionManager(properties);
-        this.errorHandler = new GenericErrorHandler();
-        this.connectionManager.registerStateChangeCallback((sid, state) -> handleConnectionStateChange(state));
+        this.connectionManager = new ConnectionManager(properties);
     }
 
     // ============================================================================
@@ -139,27 +142,16 @@ public class FlowClient {
     // 状态管理
     // ============================================================================
 
-    public FlowState getState() { return flowState; }
+    public FlowState getState() { return flowState.get(); }
+
+    public String getSessionId() { return sessionId.get(); }
 
     /**
      * 等待 Flow 完成，返回 Mono
      */
+    @NonNull
     public Mono<Void> done() {
-        if (completionFuture == null || completionFuture.isDone()) {
-            completionFuture = new CompletableFuture<>();
-        }
-        final CompletableFuture<Void> cf = completionFuture;
-        return Mono.fromFuture(() -> cf);
-    }
-
-    /**
-     * 获取连接完成的 Mono
-     */
-    public Mono<Void> getConnectionMono() {
-        if (connectionFuture == null || connectionFuture.isDone()) {
-            return Mono.empty();
-        }
-        return Mono.fromFuture(connectionFuture);
+        return completionSink.asMono();
     }
 
     // ============================================================================
@@ -167,157 +159,133 @@ public class FlowClient {
     // ============================================================================
 
     /**
-     * 启动 Flow，返回 Mono&lt;String&gt;（sessionId）
+     * 启动 Flow，返回 Mono<String>（sessionId）
      */
-    public Mono<String> start(String initialInput) {
+    @NonNull
+    public Mono<String> start(@NonNull String initialInput) {
         return start(initialInput, CybotStarConstants.DEFAULT_RESPONSE_TIMEOUT);
     }
 
-    public Mono<String> start(String initialInput, long timeoutMillis) {
-        if (this.sessionId == null || this.sessionId.isEmpty()) {
-            this.sessionId = UUID.randomUUID().toString();
+    @NonNull
+    public Mono<String> start(@NonNull String initialInput, long timeoutMillis) {
+        if (sessionId.get() == null || sessionId.get().isEmpty()) {
+            sessionId.set(UUID.randomUUID().toString());
         }
-        return Mono.<String>create(sink -> {
-            try {
-                String result = startInternal(initialInput, timeoutMillis);
-                sink.success(result);
-            } catch (Exception e) {
-                sink.error(e);
-            }
-        }).subscribeOn(Schedulers.boundedElastic());
+        return startInternal(initialInput, timeoutMillis);
     }
 
-    public Mono<String> startFrom(String sessionId) {
+    @NonNull
+    public Mono<String> startFrom(@NonNull String sessionId) {
         return startFrom(sessionId, CybotStarConstants.DEFAULT_RESPONSE_TIMEOUT);
     }
 
-    public Mono<String> startFrom(String sessionId, long timeoutMillis) {
+    @NonNull
+    public Mono<String> startFrom(@NonNull String sessionId, long timeoutMillis) {
         return startFrom(sessionId, timeoutMillis, "");
     }
 
-    public Mono<String> startFrom(String sessionId, long timeoutMillis, String initialInput) {
-        this.sessionId = sessionId;
-        return Mono.<String>create(sink -> {
-            try {
-                String result = startInternal(initialInput != null ? initialInput : "", timeoutMillis);
-                sink.success(result);
-            } catch (Exception e) {
-                sink.error(e);
-            }
-        }).subscribeOn(Schedulers.boundedElastic());
+    @NonNull
+    public Mono<String> startFrom(@NonNull String sessionId, long timeoutMillis, @NonNull String initialInput) {
+        this.sessionId.set(sessionId);
+        return startInternal(initialInput, timeoutMillis);
     }
 
     /**
-     * 发送用户输入，返回 Mono&lt;Void&gt;
+     * 发送用户输入，返回 Mono<Void>
      */
-    public Mono<Void> send(String input) {
-        return Mono.<Void>create(sink -> {
-            try {
-                sendInternal(input);
-                sink.success();
-            } catch (Exception e) {
-                sink.error(e);
-            }
-        }).subscribeOn(Schedulers.boundedElastic());
+    @NonNull
+    public Mono<Void> send(@NonNull String input) {
+        return sendInternal(input);
     }
 
-    public void abort(String reason) {
-        flowState = FlowState.ABORTED;
-        abortReason = reason;
-        FlowException error = FlowException.flowError(reason != null ? reason : "Flow 被中止", null);
-        if (completionFuture != null && !completionFuture.isDone()) {
-            completionFuture.completeExceptionally(error);
-        }
-        connectionManager.disconnect();
+    public void abort(@NonNull String reason) {
+        flowState.set(FlowState.ABORTED);
+        abortReason.set(reason);
+        FlowException error = FlowException.flowError(reason, null);
+        completionSink.tryEmitError(error);
+        connectionManager.disconnectAll().subscribe();
     }
 
     public void close() {
-        flowState = FlowState.COMPLETED;
-        connectionManager.disconnect();
+        flowState.set(FlowState.COMPLETED);
+        connectionManager.disconnectAll().subscribe();
     }
 
     // ============================================================================
     // 内部实现
     // ============================================================================
 
-    private String startInternal(String initialInput, long timeoutMillis) {
-        final String finalInitialInput = initialInput != null ? initialInput : "";
-        flowState = FlowState.STARTING;
-        historyExtracted = false;
+    @NonNull
+    private Mono<String> startInternal(@NonNull String initialInput, long timeoutMillis) {
+        flowState.set(FlowState.STARTING);
+        historyExtracted.set(false);
 
-        WebSocketConnection connection = connectionManager.getConnection();
-        if (messageHandler != null) {
-            connection.removeMessageHandler(messageHandler);
-        }
-        messageHandler = response -> {
-            try { handleMessage(response); }
-            catch (Exception e) { errorHandler.handle(e, GenericErrorHandler.withContext(Map.of("method", "start.onMessage"))); }
-        };
-        connection.onMessage(messageHandler);
+        final String sid = sessionId.get();
 
-        if (completionFuture == null || completionFuture.isDone()) {
-            completionFuture = new CompletableFuture<>();
-        }
-        connectionFuture = new CompletableFuture<>();
+        return connectionManager.getConnection(sid)
+                // 确保连接已建立
+                .flatMap(connection -> connection.ensureConnected()
+                        .thenReturn(connection))
+                // 订阅连接状态变化
+                .doOnNext(connection -> {
+                    connection.connectionStates()
+                            .subscribe(this::handleConnectionStateChange);
+                })
+                // 订阅消息流
+                .flatMap(connection -> {
+                    // 启动消息处理
+                    connection.messages()
+                            .subscribe(
+                                    this::handleMessage,
+                                    error -> log.error("Message stream error", error)
+                            );
 
-        connectionManager.connect().thenRun(() -> {
-            flowState = FlowState.RUNNING;
-            FlowConfig flowConfig = FlowConfig.builder()
-                    .credentials(config.getCredentials())
-                    .flow(config.getFlow())
-                    .question(finalInitialInput)
-                    .build();
-            AgentConfig properties = AgentConfig.builder()
-                    .credentials(config.getCredentials())
-                    .build();
-            WSPayload payload = FlowPayloadBuilder.buildFlowPayload(properties, flowConfig, this.sessionId);
-            emit(FlowEventType.RAW_REQUEST, payload);
-            connection.send(payload);
-            connectionFuture.complete(null);
-        }).exceptionally(error -> {
-            log.error("Flow startup failed", error);
-            FlowException flowError = error instanceof FlowException
-                    ? (FlowException) error
-                    : FlowException.connectionFailed(error.getMessage(), error instanceof Exception ? error : null);
-            if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(flowError);
-            if (connectionFuture != null && !connectionFuture.isDone()) connectionFuture.completeExceptionally(flowError);
-            return null;
-        });
+                    // 发送启动请求
+                    FlowConfig flowConfig = FlowConfig.builder()
+                            .credentials(config.getCredentials())
+                            .flow(config.getFlow())
+                            .question(initialInput)
+                            .build();
+                    AgentConfig properties = AgentConfig.builder()
+                            .credentials(config.getCredentials())
+                            .build();
+                    WSPayload payload = FlowPayloadBuilder.buildFlowPayload(properties, flowConfig, sid);
 
-        try {
-            connectionFuture.orTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                    .exceptionally(throwable -> {
-                        if (throwable instanceof TimeoutException) throw FlowException.connectionTimeout(timeoutMillis);
-                        if (throwable instanceof FlowException) throw (FlowException) throwable;
-                        if (throwable instanceof RuntimeException) throw (RuntimeException) throwable;
-                        throw new RuntimeException(throwable);
-                    }).join();
-        } catch (Exception e) {
-            if (e instanceof FlowException) throw (FlowException) e;
-            if (e.getCause() instanceof FlowException) throw (FlowException) e.getCause();
-            if (e.getCause() instanceof TimeoutException) throw FlowException.connectionTimeout(timeoutMillis);
-            throw FlowException.connectionFailed("Connection establishment failed: " + e.getMessage(), e);
-        }
-        return this.sessionId;
+                    emit(FlowEventType.RAW_REQUEST, payload);
+
+                    return connection.send(payload)
+                            .doOnSuccess(v -> flowState.set(FlowState.RUNNING))
+                            .thenReturn(sid);
+                })
+                .timeout(Duration.ofMillis(timeoutMillis))
+                .onErrorMap(error -> {
+                    if (error instanceof FlowException) {
+                        return error;
+                    }
+                    return FlowException.connectionFailed("Flow startup failed: " + error.getMessage(),
+                            error instanceof Exception ? (Exception) error : null);
+                });
     }
 
-    private void sendInternal(String input) {
+    @NonNull
+    private Mono<Void> sendInternal(@NonNull String input) {
         FlowState currentState = getState();
         if (currentState != FlowState.RUNNING && currentState != FlowState.WAITING) {
             FlowException error = FlowException.notRunning();
             emit(FlowEventType.ERROR, error);
-            errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "send", "reason", "notRunning")));
-            if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
-            throw error;
+            completionSink.tryEmitError(error);
+            return Mono.error(error);
         }
         if (currentState != FlowState.WAITING) {
             FlowException error = FlowException.notWaiting();
             emit(FlowEventType.ERROR, error);
-            errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "send", "reason", "notWaiting")));
-            if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
-            throw error;
+            completionSink.tryEmitError(error);
+            return Mono.error(error);
         }
-        flowState = FlowState.RUNNING;
+
+        flowState.set(FlowState.RUNNING);
+
+        final String sid = sessionId.get();
         FlowConfig flowConfig = FlowConfig.builder()
                 .credentials(config.getCredentials())
                 .flow(config.getFlow())
@@ -326,25 +294,27 @@ public class FlowClient {
         AgentConfig properties = AgentConfig.builder()
                 .credentials(config.getCredentials())
                 .build();
-        WSPayload payload = FlowPayloadBuilder.buildFlowPayload(properties, flowConfig, this.sessionId);
+        WSPayload payload = FlowPayloadBuilder.buildFlowPayload(properties, flowConfig, sid);
+
         emit(FlowEventType.RAW_REQUEST, payload);
-        WebSocketConnection connection = connectionManager.get();
-        if (connection != null && connection.isConnected()) {
-            connection.send(payload);
-        } else {
-            FlowException error = FlowException.connectionClosed();
-            emit(FlowEventType.ERROR, error);
-            errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "send", "reason", "connectionClosed")));
-            if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
-            throw error;
-        }
+
+        return connectionManager.getConnection(sid)
+                .flatMap(connection -> {
+                    if (!connection.isConnected()) {
+                        FlowException error = FlowException.connectionClosed();
+                        emit(FlowEventType.ERROR, error);
+                        completionSink.tryEmitError(error);
+                        return Mono.error(error);
+                    }
+                    return connection.send(payload);
+                });
     }
 
     // ============================================================================
     // 连接状态 & 消息处理
     // ============================================================================
 
-    private void handleConnectionStateChange(ConnectionState state) {
+    private void handleConnectionStateChange(@NonNull ConnectionState state) {
         switch (state) {
             case CONNECTED: emit(FlowEventType.CONNECTED); break;
             case DISCONNECTED: case CLOSED: emit(FlowEventType.DISCONNECTED); break;
@@ -353,7 +323,7 @@ public class FlowClient {
         }
     }
 
-    private void handleMessage(WSResponse response) {
+    private void handleMessage(@NonNull WSResponse response) {
         FlowData.MessageData messageData = response.getData() instanceof Map
                 ? JSON.parseObject(JSON.toJSONString(response.getData()), FlowData.MessageData.class)
                 : null;
@@ -371,10 +341,9 @@ public class FlowClient {
         if (topLevelCode != null && topLevelCode.startsWith("4")) {
             String errorMessage = response.getMessage() != null ? response.getMessage() : "Unknown error";
             FlowException error = new FlowException(topLevelCode, errorMessage, Map.of("response", response));
-            flowState = FlowState.ERROR;
+            flowState.set(FlowState.ERROR);
             emit(FlowEventType.ERROR, error);
-            errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "handleMessage", "topLevelCode", topLevelCode)));
-            if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
+            completionSink.tryEmitError(error);
             return;
         }
 
@@ -385,43 +354,38 @@ public class FlowClient {
             String answer = (String) responseData.getOrDefault("answer", "");
             if (answer.contains("系统异常(")) {
                 FlowException error = FlowException.fromServerMessage(answer, response);
-                flowState = FlowState.ERROR;
+                flowState.set(FlowState.ERROR);
                 emit(FlowEventType.ERROR, error);
-                errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "handleMessage", "hasSystemError", true)));
-                if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
+                completionSink.tryEmitError(error);
                 return;
             }
             if (answer.contains("涉及到风险")) {
                 FlowException error = FlowException.flowError("Risk control blocked: " + answer, response);
-                flowState = FlowState.ABORTED;
-                abortReason = answer;
-                // 创建 FlowErrorVO 以便 GUI 能正确处理错误
+                flowState.set(FlowState.ABORTED);
+                abortReason.set(answer);
                 FlowErrorVO errorVO = new FlowErrorVO();
                 errorVO.setErrorMessage(answer);
                 errorVO.setMessage("风控拦截");
                 emit(FlowEventType.ERROR, errorVO);
-                errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "handleMessage", "riskBlocked", true)));
-                if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
+                completionSink.tryEmitError(error);
                 return;
             }
         }
         handleFlowMessage(response);
     }
 
-    private void handleFlowMessage(WSResponse response) {
+    private void handleFlowMessage(@NonNull WSResponse response) {
         if (response.getData() instanceof String) {
             String textContent = (String) response.getData();
             if (textContent != null && textContent.contains("涉及到风险")) {
                 FlowException error = FlowException.flowError("Risk control blocked: " + textContent, response);
-                flowState = FlowState.ABORTED;
-                abortReason = textContent;
-                // 创建 FlowErrorVO 以便 GUI 能正确处理错误
+                flowState.set(FlowState.ABORTED);
+                abortReason.set(textContent);
                 FlowErrorVO errorVO = new FlowErrorVO();
                 errorVO.setErrorMessage(textContent);
                 errorVO.setMessage("风控拦截");
                 emit(FlowEventType.ERROR, errorVO);
-                errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "handleFlowMessage", "riskBlocked", true)));
-                if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
+                completionSink.tryEmitError(error);
                 return;
             }
 
@@ -441,8 +405,8 @@ public class FlowClient {
                 vo.setFinished(isFinished);
                 emit(FlowEventType.MESSAGE, vo);
             }
-            if (isFinished && flowState == FlowState.RUNNING) {
-                flowState = FlowState.WAITING;
+            if (isFinished && flowState.get() == FlowState.RUNNING) {
+                flowState.set(FlowState.WAITING);
             }
             return;
         }
@@ -476,18 +440,15 @@ public class FlowClient {
     // 事件处理方法
     // ============================================================================
 
-    private void handleFlowStart(FlowData flowData) {
+    private void handleFlowStart(@NonNull FlowData flowData) {
         Object handler = typedHandlerMap.get(FlowEventType.START);
         if (handler == null) return;
-        // 根据处理器签名推断类型：VO 处理器接收 FlowStartVO，否则接收 FlowData
-        // 由于泛型擦除，使用方法名或其他特征来区分
-        // 这里简化处理：始终先尝试 VO，如果失败则使用 FlowData
         FlowStartVO vo = FlowVOExtractor.extractFlowStartVO(flowData);
         emit(FlowEventType.START, vo);
     }
 
-    private void handleFlowEnd(FlowData flowData) {
-        flowState = FlowState.COMPLETED;
+    private void handleFlowEnd(@NonNull FlowData flowData) {
+        flowState.set(FlowState.COMPLETED);
         String finalText = "";
         FlowData.MessageData md = flowData.getData();
         if (md != null) {
@@ -499,26 +460,24 @@ public class FlowClient {
             FlowEndVO vo = FlowVOExtractor.extractFlowEndVO(flowData, finalText);
             emit(FlowEventType.END, vo);
         }
-        if (completionFuture != null && !completionFuture.isDone()) completionFuture.complete(null);
+        completionSink.tryEmitEmpty();
     }
 
-    private void handleMessageEvent(FlowData flowData) {
+    private void handleMessageEvent(@NonNull FlowData flowData) {
         Object handler = typedHandlerMap.get(FlowEventType.MESSAGE);
         if (handler == null) return;
         FlowData.MessageData md = flowData.getData();
         if (handler instanceof MessageHandler) {
-            // MessageHandler 是特殊接口（双参数）
             String msg = FlowUtils.extractFlowDisplayText(md);
             if (msg == null) msg = "";
             boolean isFinished = FlowUtils.isMessageFinished(md);
             emit(FlowEventType.MESSAGE, msg, isFinished);
         } else {
-            // FlowHandler 类型：统一发送 FlowMessageVO
             emit(FlowEventType.MESSAGE, FlowVOExtractor.extractFlowMessageVO(flowData));
         }
     }
 
-    private void handleNodeEnter(FlowData flowData) {
+    private void handleNodeEnter(@NonNull FlowData flowData) {
         Object handler = typedHandlerMap.get(FlowEventType.NODE_ENTER);
         if (handler == null) return;
         if (flowData.getData() == null) return;
@@ -526,7 +485,7 @@ public class FlowClient {
         emit(FlowEventType.NODE_ENTER, vo);
     }
 
-    private void handleDebugMessage(FlowData flowData) {
+    private void handleDebugMessage(@NonNull FlowData flowData) {
         FlowData.MessageData md = flowData.getData();
         if (md == null) return;
         String answer = md.getAnswer() != null ? md.getAnswer() : "";
@@ -538,12 +497,12 @@ public class FlowClient {
         }
     }
 
-    private void handleWaiting(FlowData flowData) {
+    private void handleWaiting(@NonNull FlowData flowData) {
         FlowData.MessageData md = flowData.getData();
         if (md == null) return;
         extractAndEmitMessage(md, flowData, FlowEventType.WAITING.getEventCode());
-        if (flowState != FlowState.WAITING) {
-            flowState = FlowState.WAITING;
+        if (flowState.get() != FlowState.WAITING) {
+            flowState.set(FlowState.WAITING);
             Object handler = typedHandlerMap.get(FlowEventType.WAITING);
             if (handler != null) {
                 FlowWaitingVO vo = FlowVOExtractor.extractFlowWaitingVO(flowData);
@@ -552,7 +511,7 @@ public class FlowClient {
         }
     }
 
-    private void handleJump(FlowData flowData) {
+    private void handleJump(@NonNull FlowData flowData) {
         String jumpType = "unknown";
         Object handler = typedHandlerMap.get(FlowEventType.JUMP);
         if (handler != null) {
@@ -561,7 +520,7 @@ public class FlowClient {
         }
     }
 
-    private void handleSuccessResponse(FlowData flowData) {
+    private void handleSuccessResponse(@NonNull FlowData flowData) {
         FlowData.MessageData md = flowData.getData();
         if (md == null) return;
         Integer nodeWaitingInput = flowData.getNodeWaitingInput();
@@ -573,28 +532,27 @@ public class FlowClient {
             extractAndEmitMessage(md, flowData, "000000");
         } else if (displayText != null && !(isFinished && answerIndex != null)) {
             handleMessageEvent(flowData);
-            historyExtracted = true;
+            historyExtracted.set(true);
         }
         if (nodeWaitingInput != null && nodeWaitingInput == 1) {
-            if (flowState != FlowState.WAITING) {
-                flowState = FlowState.WAITING;
+            if (flowState.get() != FlowState.WAITING) {
+                flowState.set(FlowState.WAITING);
                 FlowWaitingVO vo = FlowVOExtractor.extractFlowWaitingVO(flowData);
                 emit(FlowEventType.WAITING, vo);
             }
         }
     }
 
-    private void handleFlowError(FlowData flowData) {
+    private void handleFlowError(@NonNull FlowData flowData) {
         String errorMessage = flowData.getMessage() != null ? flowData.getMessage() : "Flow execution error";
         FlowException error = FlowException.flowError(errorMessage, null);
-        flowState = FlowState.ERROR;
+        flowState.set(FlowState.ERROR);
         Object handler = typedHandlerMap.get(FlowEventType.ERROR);
         if (handler != null) {
             FlowErrorVO vo = FlowVOExtractor.extractFlowErrorVO(flowData, error);
             emit(FlowEventType.ERROR, vo);
         }
-        errorHandler.handle(error, GenericErrorHandler.withContext(Map.of("method", "handleFlowError")));
-        if (completionFuture != null && !completionFuture.isDone()) completionFuture.completeExceptionally(error);
+        completionSink.tryEmitError(error);
     }
 
     private void extractAndEmitMessage(FlowData.MessageData messageData, FlowData flowData, String context) {
@@ -603,13 +561,13 @@ public class FlowClient {
         boolean isFinished = FlowUtils.isMessageFinished(messageData);
         if (displayText != null && !(isFinished && answerIndex != null)) {
             handleMessageEvent(flowData);
-            historyExtracted = true;
+            historyExtracted.set(true);
         } else {
-            if (!historyExtracted) {
+            if (!historyExtracted.get()) {
                 String historyDisplayText = extractMessageFromHistory(messageData);
                 if (historyDisplayText != null) {
                     handleMessageEvent(flowData);
-                    historyExtracted = true;
+                    historyExtracted.set(true);
                 }
             }
         }
@@ -634,7 +592,7 @@ public class FlowClient {
     // 事件分发
     // ============================================================================
 
-    private void emit(FlowEventType event, Object... args) {
+    private void emit(@NonNull FlowEventType event, Object... args) {
         Object handler = typedHandlerMap.get(event);
         if (handler != null) {
             try { invokeTypedHandler(event, handler, args); }
@@ -643,10 +601,9 @@ public class FlowClient {
     }
 
     @SuppressWarnings("unchecked")
-    private void invokeTypedHandler(FlowEventType event, Object handler, Object... args) {
+    private void invokeTypedHandler(@NonNull FlowEventType event, @NonNull Object handler, Object... args) {
         switch (event) {
             case MESSAGE:
-                // MessageHandler 是特殊接口（双参数）
                 if (handler instanceof MessageHandler && args.length >= 2 && args[0] instanceof String && args[1] instanceof Boolean) {
                     ((MessageHandler) handler).handle((String) args[0], (Boolean) args[1]);
                 } else if (handler instanceof FlowHandler && args.length > 0) {
@@ -660,7 +617,6 @@ public class FlowClient {
             case DEBUG:
             case NODE_ENTER:
             case JUMP:
-                // 这些事件统一使用 VO 对象
                 if (handler instanceof FlowHandler && args.length > 0) {
                     ((FlowHandler<Object>) handler).handle(args[0]);
                 }
@@ -688,3 +644,4 @@ public class FlowClient {
         }
     }
 }
+

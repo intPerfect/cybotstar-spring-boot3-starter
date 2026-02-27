@@ -1,150 +1,150 @@
 package com.brgroup.cybotstar.agent.session;
 
-import com.brgroup.cybotstar.connection.WebSocketConnection;
-import com.brgroup.cybotstar.stream.StreamState;
-import com.brgroup.cybotstar.agent.model.ExtendedSendOptions;
 import com.brgroup.cybotstar.agent.model.MessageParam;
-import com.brgroup.cybotstar.model.ws.WSPayload;
+import com.brgroup.cybotstar.connection.WebSocketConnection;
+import com.brgroup.cybotstar.handler.ReactiveMessageHandler;
 import com.brgroup.cybotstar.model.ws.WSResponse;
-import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 会话上下文类
- * 封装单个会话的所有状态和资源，便于统一管理和清理
+ * 响应式会话上下文
+ * 管理单个会话的所有状态和资源
  *
  * @author zhiyuan.xi
  */
-@Data
+@Slf4j
 public class SessionContext {
-    /**
-     * 会话 ID
-     */
+
     @NonNull
     private final String sessionId;
 
-    /**
-     * WebSocket 连接
-     */
-    @Nullable
-    private WebSocketConnection connection;
+    @NonNull
+    private final WebSocketConnection connection;
+
+    @NonNull
+    private final ReactiveMessageHandler messageHandler;
+
+    // 对话历史（使用 AtomicReference 保证线程安全）
+    private final AtomicReference<List<MessageParam>> historyRef =
+            new AtomicReference<>(new ArrayList<>());
+
+    public SessionContext(
+            @NonNull String sessionId,
+            @NonNull WebSocketConnection connection) {
+        this.sessionId = sessionId;
+        this.connection = connection;
+        this.messageHandler = new ReactiveMessageHandler();
+    }
 
     /**
-     * 流式状态
-     */
-    @Nullable
-    private StreamState streamState;
-
-    /**
-     * 会话默认配置
-     */
-    @Nullable
-    private ExtendedSendOptions config;
-
-    /**
-     * 对话历史列表
-     * 存储该会话的所有消息，使用 MessageParam 格式
-     * 每个 MessageParam 可以包含 dialogId（如果该消息有对应的 dialog_id）
+     * 获取会话 ID
      */
     @NonNull
-    private final List<MessageParam> conversationHistory = new ArrayList<>();
-
-    /**
-     * 消息处理器（使用 volatile 确保多线程环境下的可见性）
-     */
-    private volatile WebSocketConnection.@Nullable WSMessageHandler messageHandler;
-
-    public SessionContext(@NonNull String sessionId) {
-        this.sessionId = sessionId;
+    public String getSessionId() {
+        return sessionId;
     }
 
     /**
-     * 清理所有资源
+     * 获取连接
      */
-    public void clear() {
-        // 移除消息处理器
-        if (messageHandler != null && connection != null) {
-            connection.removeMessageHandler(messageHandler);
-            messageHandler = null;
-        }
+    @NonNull
+    public WebSocketConnection getConnection() {
+        return connection;
     }
 
     /**
-     * 检查是否有活跃的流
+     * 获取原始消息流
      */
-    public boolean hasActiveStream() {
-        return streamState != null && streamState.getStreamConfig().getActiveStreamId() != null;
+    @NonNull
+    public Flux<WSResponse> messageStream() {
+        return connection.messages();
     }
 
     /**
-     * 检查连接是否可用
+     * 获取消息事件流
      */
-    public boolean isConnectionReady() {
-        return connection != null && connection.isConnected();
+    @NonNull
+    public Flux<ReactiveMessageHandler.MessageEvent> eventStream() {
+        return messageHandler.handle(connection.messages());
+    }
+
+    /**
+     * 获取流式 chunk 流
+     */
+    @NonNull
+    public Flux<String> chunkStream() {
+        return messageHandler.extractStreamContent(connection.messages());
+    }
+
+    /**
+     * 等待完成信号
+     */
+    @NonNull
+    public Mono<String> waitForCompletion() {
+        return messageHandler.waitForCompletion(connection.messages());
     }
 
     /**
      * 获取对话历史
-     * 返回的列表中的 MessageParam 不包含 dialogId 字段（序列化时会被忽略）
-     * 返回副本，避免外部修改影响内部状态
-     * 
-     * @return 对话历史列表，可以直接用作 messageParams 参数
      */
     @NonNull
-    public List<MessageParam> getHistoryMessages() {
-        return new ArrayList<>(conversationHistory);
+    public List<MessageParam> getHistory() {
+        return new ArrayList<>(historyRef.get());
     }
 
     /**
-     * 获取对话历史列表（内部使用）
-     * 返回原始列表引用，用于内部添加消息
-     * 
-     * @return 对话历史列表的原始引用
+     * 添加历史消息
      */
     @NonNull
-    public List<MessageParam> getConversationHistory() {
-        return conversationHistory;
+    public Mono<Void> addHistory(@NonNull MessageParam message) {
+        return Mono.fromRunnable(() -> {
+            historyRef.updateAndGet(list -> {
+                List<MessageParam> newList = new ArrayList<>(list);
+                newList.add(message);
+                return newList;
+            });
+            log.debug("Added history message, sessionId: {}, role: {}", sessionId, message.getRole());
+        });
     }
 
     /**
-     * 添加消息到对话历史
-     * 
-     * @param message 要添加的消息
+     * 添加多条历史消息
      */
-    public void addHistory(@NonNull MessageParam message) {
-        conversationHistory.add(message);
+    @NonNull
+    public Mono<Void> addHistory(@NonNull List<MessageParam> messages) {
+        return Mono.fromRunnable(() -> {
+            historyRef.updateAndGet(list -> {
+                List<MessageParam> newList = new ArrayList<>(list);
+                newList.addAll(messages);
+                return newList;
+            });
+            log.debug("Added {} history messages, sessionId: {}", messages.size(), sessionId);
+        });
     }
 
     /**
-     * Agent 回调集合
+     * 清空历史消息
      */
-    @Data
-    public static class AgentCallbacks {
-        @Nullable
-        private Consumer<String> onChunk;
-        @Nullable
-        private Consumer<String> onComplete;
-        @Nullable
-        private Consumer<Throwable> onError;
-        @Nullable
-        private Runnable onConnected;
-        @Nullable
-        private Runnable onDisconnected;
-        @Nullable
-        private Consumer<Integer> onReconnecting;
-        @Nullable
-        private BiConsumer<String, String> onMessage;
-        @Nullable
-        private Consumer<String> onReasoning;
-        @Nullable
-        private Consumer<WSResponse> onRawResponse;
-        @Nullable
-        private Consumer<WSPayload> onRawRequest;
+    @NonNull
+    public Mono<Void> clearHistory() {
+        return Mono.fromRunnable(() -> {
+            historyRef.set(new ArrayList<>());
+            log.debug("Cleared history, sessionId: {}", sessionId);
+        });
+    }
+
+    /**
+     * 关闭会话
+     */
+    public void close() {
+        connection.close();
+        log.debug("Session closed, sessionId: {}", sessionId);
     }
 }

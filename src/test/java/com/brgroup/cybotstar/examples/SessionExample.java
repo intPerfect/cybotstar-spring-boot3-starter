@@ -1,11 +1,10 @@
 package com.brgroup.cybotstar.examples;
 
-import com.alibaba.fastjson2.JSON;
 import com.brgroup.cybotstar.agent.model.MessageParam;
 import com.brgroup.cybotstar.annotation.CybotStarAgent;
 import com.brgroup.cybotstar.agent.AgentClient;
 import com.brgroup.cybotstar.agent.model.ModelOptions;
-import com.brgroup.cybotstar.agent.session.ReactiveSessionContext;
+import com.brgroup.cybotstar.agent.session.SessionContext;
 
 import static com.brgroup.cybotstar.agent.model.MessageParam.*;
 
@@ -160,7 +159,7 @@ public class SessionExample {
             ColorPrinter.info("[案例1 - 步骤3] 加载对话历史创建新会话");
 
             // 获取第一个会话的对话历史
-            ReactiveSessionContext oldContext = client.getSessionContext("03-agent-session");
+            SessionContext oldContext = client.getSessionContext("03-agent-session");
             List<MessageParam> historyMessages = oldContext.getHistory();
 
             ColorPrinter.info("附带 " + historyMessages.size() + " 条历史会话");

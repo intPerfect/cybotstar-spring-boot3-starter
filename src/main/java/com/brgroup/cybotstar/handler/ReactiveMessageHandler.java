@@ -41,6 +41,7 @@ public class ReactiveMessageHandler {
     @Data
     @AllArgsConstructor
     public static class MessageEvent {
+        @NonNull
         private MessageEventType type;
         private String content;
         private String dialogId;
