@@ -231,6 +231,13 @@ public class WebSocketConnection implements AutoCloseable {
                     log.debug("WebSocket connection opened");
                     // 取消连接超时定时器（如果存在）
                     cancelConnectTimeoutTimer();
+
+                    // 检查 scheduler 是否已关闭，避免在关闭后启动心跳
+                    if (scheduler.isShutdown()) {
+                        log.warn("Scheduler already shutdown, skipping state update and heartbeat");
+                        return;
+                    }
+
                     setState(ConnectionState.CONNECTED);
                     reconnectAttempts.set(0);
                     startHeartbeat();

@@ -1,5 +1,6 @@
 package com.brgroup.cybotstar.examples;
 
+import com.alibaba.fastjson2.JSON;
 import com.brgroup.cybotstar.agent.model.MessageParam;
 import com.brgroup.cybotstar.annotation.CybotStarAgent;
 import com.brgroup.cybotstar.agent.AgentClient;
@@ -7,6 +8,7 @@ import com.brgroup.cybotstar.agent.model.ModelOptions;
 import com.brgroup.cybotstar.agent.session.SessionContext;
 
 import static com.brgroup.cybotstar.agent.model.MessageParam.*;
+
 import com.brgroup.cybotstar.examples.mock.SessionMockData;
 import com.brgroup.cybotstar.tool.ExampleContext;
 import com.brgroup.cybotstar.tool.ColorPrinter;
@@ -23,16 +25,16 @@ import java.util.List;
 
 /**
  * 示例3：多轮对话与历史消息
- *
+ * <p>
  * 案例1（步骤1-3）：演示会话管理和对话记忆
  * - 使用默认会话ID进行多轮对话
  * - 测试对话上下文自动记忆
  * - 将历史对话迁移到新会话
- *
+ * <p>
  * 案例2（步骤4）：演示自定义历史消息
  * - 手动构建历史消息（system/user/assistant）
  * - 在新会话中使用自定义历史
- *
+ * <p>
  * 使用多配置方式，通过 @CybotStarAgent 注解注入指定的 AgentClient
  * <p>
  * 使用 Reactor 操作符处理流：
@@ -141,8 +143,8 @@ public class SessionExample {
 
             renderer.start();
             // 创建流式请求，使用 Reactor 操作符处理流
-            client
-                    .prompt(memoryQuestion)
+            client.prompt(memoryQuestion)
+                    .session("03-agent-session")
                     .stream()
                     .doOnNext(chunk -> renderer.append(chunk))
                     .doOnComplete(() -> renderer.finish())
@@ -182,8 +184,7 @@ public class SessionExample {
 
             renderer.start();
             // 创建新会话，传入对话历史
-            client
-                    .prompt(historyQuestion)
+            client.prompt(historyQuestion)
                     .session(newSessionId)
                     .messages(historyMessages)
                     .stream()

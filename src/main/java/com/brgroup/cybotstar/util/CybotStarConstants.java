@@ -23,7 +23,7 @@ public final class CybotStarConstants {
     /**
      * 默认响应超时时间（毫秒）
      */
-    public static final long DEFAULT_RESPONSE_TIMEOUT = 20000;
+    public static final long DEFAULT_RESPONSE_TIMEOUT = 30000;
 
     // ============================================================================
     // 会话相关
@@ -46,7 +46,7 @@ public final class CybotStarConstants {
     /**
      * WebSocket 默认连接超时时间（毫秒）
      */
-    public static final long DEFAULT_WS_TIMEOUT = 5000;
+    public static final long DEFAULT_WS_TIMEOUT = 30000;
 
     /**
      * 默认重连间隔时间（毫秒）
@@ -65,7 +65,7 @@ public final class CybotStarConstants {
     /**
      * 流式输出初始等待时间（毫秒）
      */
-    public static final long STREAM_WAIT_INITIAL_DELAY = 3000;
+    public static final long STREAM_WAIT_INITIAL_DELAY = 30000;
 
     /**
      * 流式输出轮询间隔（毫秒）

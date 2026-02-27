@@ -222,19 +222,11 @@ public class MessageHandler {
         }
         state.getStreamBuffer().getBuffer().append(text);
 
-        // 触发流式回调
+        // 触发流式回调（通过回调将数据推送到 Reactor Sink）
         if (state.getStreamConfig().isCurrentStream() && state.getCallbacks().getCurrentOnChunk() != null) {
             state.getCallbacks().getCurrentOnChunk().accept(text);
         } else if (callbacks != null && callbacks.getOnChunk() != null) {
             callbacks.getOnChunk().accept(text);
-        }
-
-        // 推送到流队列
-        if (streamManager.isActive(sessionId)) {
-            StreamManager.StreamQueueItem item = new StreamManager.StreamQueueItem();
-            item.setValue(text);
-            item.setDone(false);
-            streamManager.enqueue(sessionId, item);
         }
     }
 
@@ -274,15 +266,6 @@ public class MessageHandler {
         String dialogId = state.getStreamBuffer().getDialogId();
         log.debug("✅ [Complete] Conversation completed, dialog_id={}, totalLength={}", dialogId, fullText.length());
 
-        // 推送完整文本到流队列（表示流结束），同时保存 dialog_id
-        if (streamManager.isActive(sessionId)) {
-            StreamManager.StreamQueueItem item = new StreamManager.StreamQueueItem();
-            item.setValue(fullText);
-            item.setDone(true);
-            item.setDialogId(dialogId); // 保存 dialog_id
-            streamManager.enqueue(sessionId, item);
-        }
-
         // 更新完成时间戳（状态重置前更新）
         state.getSendState().setLastRequestEndTime(System.currentTimeMillis());
 
@@ -292,7 +275,7 @@ public class MessageHandler {
             state.setTimeoutId(null);
         }
 
-        // Resolve 流完成 Promise
+        // Resolve 流完成 Promise（触发 Reactor Sink 的 complete）
         if (state.getPromiseHandlers().getStreamCompletionResolve() != null) {
             state.getPromiseHandlers().getStreamCompletionResolve().run();
             state.getPromiseHandlers().setStreamCompletionResolve(null);
@@ -313,7 +296,7 @@ public class MessageHandler {
         state.getStreamConfig().setCurrentStream(false);
         state.getStreamConfig().setCurrentNodeId(null);
         state.getStreamConfig().setActiveStreamId(null);
-        // 清理超时相关状态（移除重复代码）
+        // 清理超时相关状态
         state.setTimeout(0);
         state.setRefreshTimeout(null);
 
@@ -324,7 +307,7 @@ public class MessageHandler {
             currentOnComplete.accept(fullText);
         }
         // 全局 onComplete 回调只在流式模式下触发，避免非流式模式下重复打印
-        if (isStreamMode && callbacks.getOnComplete() != null) {
+        if (isStreamMode && callbacks != null && callbacks.getOnComplete() != null) {
             callbacks.getOnComplete().accept(fullText);
         }
 

@@ -29,6 +29,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -66,6 +67,9 @@ public class AgentClient implements DisposableBean {
     // 使用 ThreadLocal 支持并发调用
     private final ThreadLocal<RequestBuilder> requestBuilderHolder = ThreadLocal.withInitial(RequestBuilder::new);
     private final ThreadLocal<String> threadLocalSessionId = new ThreadLocal<>();
+    // 全局默认 session ID（贯穿客户端生命周期）
+    @Nullable
+    private volatile String defaultSessionId;
     private final SessionContext.@NonNull AgentCallbacks callbacks = new SessionContext.AgentCallbacks();
 
     public AgentClient(@NonNull AgentConfig config) {
@@ -98,6 +102,8 @@ public class AgentClient implements DisposableBean {
     @NonNull
     public AgentClient session(@NonNull String sessionId) {
         this.threadLocalSessionId.set(sessionId);
+        // 同时更新全局默认 session
+        this.defaultSessionId = sessionId;
         requestBuilderHolder.get().session(sessionId);
         if (!connectionManager.isConnected(sessionId)) {
             connectionManager.connect(sessionId).thenRun(() -> {
@@ -109,6 +115,22 @@ public class AgentClient implements DisposableBean {
             });
         }
         return this;
+    }
+
+    /**
+     * 获取当前有效的 session ID
+     * 优先级：ThreadLocal > 全局默认 > 常量默认值
+     */
+    @NonNull
+    private String getEffectiveSessionId() {
+        String threadSession = threadLocalSessionId.get();
+        if (threadSession != null) {
+            return threadSession;
+        }
+        if (defaultSessionId != null) {
+            return defaultSessionId;
+        }
+        return CybotStarConstants.DEFAULT_SESSION_ID;
     }
 
 
@@ -184,13 +206,12 @@ public class AgentClient implements DisposableBean {
     @NonNull
     public Mono<String> send() {
         RequestBuilder requestBuilder = requestBuilderHolder.get();
-        String threadSession = threadLocalSessionId.get();
-        String effectiveDefaultSession = threadSession != null ? threadSession : CybotStarConstants.DEFAULT_SESSION_ID;
+        String effectiveDefaultSession = getEffectiveSessionId();
         RequestBuilder.RequestConfig requestConfig = requestBuilder.buildRequestConfig(effectiveDefaultSession);
         requestBuilder.reset();
         ExtendedSendOptions mergedOptions = mergeSessionOptions(requestConfig.sessionId(), requestConfig.options());
 
-        // 清理 ThreadLocal
+        // 清理 ThreadLocal（但保留全局默认 session）
         requestBuilderHolder.remove();
         threadLocalSessionId.remove();
 
@@ -214,53 +235,87 @@ public class AgentClient implements DisposableBean {
      * - doOnNext() - 处理每个 chunk
      * - doOnComplete() - 流完成时回调
      * - doOnError() - 错误处理
+     *
+     * 完全基于 Reactor 的响应式实现，使用 Sinks.many() 作为生产者-消费者桥梁
      */
     @NonNull
     public Flux<String> stream() {
         RequestBuilder requestBuilder = requestBuilderHolder.get();
-        String threadSession = threadLocalSessionId.get();
-        String effectiveDefaultSession = threadSession != null ? threadSession : CybotStarConstants.DEFAULT_SESSION_ID;
+        String effectiveDefaultSession = getEffectiveSessionId();
         RequestBuilder.RequestConfig requestConfig = requestBuilder.buildRequestConfig(effectiveDefaultSession);
         requestBuilder.reset();
         ExtendedSendOptions mergedOptions = mergeSessionOptions(requestConfig.sessionId(), requestConfig.options());
         String sessionId = requestConfig.sessionId();
 
-        // 清理 ThreadLocal
+        // 清理 ThreadLocal（但保留全局默认 session）
         requestBuilderHolder.remove();
         threadLocalSessionId.remove();
 
-        return Flux.<String>create(sink -> {
-            // 获取流式状态
-            StreamState state = sessionManager.getStreamState(sessionId);
+        // 创建 Reactor Sinks.Many 作为生产者-消费者桥梁
+        // 使用 unicast() 确保单一订阅者，避免多播导致的延迟
+        // 使用 onBackpressureBuffer() 处理背压
+        reactor.core.publisher.Sinks.Many<String> sink = reactor.core.publisher.Sinks.many()
+                .unicast()
+                .onBackpressureBuffer();
 
-            // 设置流完成 Promise
-            CompletableFuture<Void> completionFuture = new CompletableFuture<>();
-            state.getPromiseHandlers().setStreamCompletionResolve(() -> completionFuture.complete(null));
-            state.getPromiseHandlers().setStreamCompletionReject(completionFuture::completeExceptionally);
+        // 获取流式状态
+        StreamState state = sessionManager.getStreamState(sessionId);
 
-            // 将数据推送到 FluxSink
-            Consumer<String> fluxOnChunk = sink::next;
-
-            // 发送请求
-            CompletableFuture<String> sendFuture = sendInternal(
-                    requestConfig.question(), true, fluxOnChunk, null,
-                    sessionId, mergedOptions);
-
-            sendFuture.whenComplete((result, sendError) -> {
-                if (sendError != null) {
-                    sink.error(sendError);
+        // 设置 chunk 回调，将数据推送到 Reactor Sink
+        Consumer<String> fluxOnChunk = chunk -> {
+            reactor.core.publisher.Sinks.EmitResult result = sink.tryEmitNext(chunk);
+            if (result.isFailure()) {
+                log.warn("Failed to emit chunk to sink, result: {}, sessionId: {}", result, sessionId);
+                // 如果失败，尝试使用阻塞方式发送
+                if (result == reactor.core.publisher.Sinks.EmitResult.FAIL_NON_SERIALIZED) {
+                    sink.emitNext(chunk, reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST);
                 }
-            });
+            }
+        };
 
-            // 等待流完成
-            completionFuture.whenComplete((v, completionError) -> {
-                if (completionError != null) {
-                    sink.error(completionError);
-                } else {
-                    sink.complete();
+        // 设置流完成 Promise
+        CompletableFuture<Void> completionFuture = new CompletableFuture<>();
+        state.getPromiseHandlers().setStreamCompletionResolve(() -> {
+            completionFuture.complete(null);
+            // 完成 Reactor Sink
+            reactor.core.publisher.Sinks.EmitResult result = sink.tryEmitComplete();
+            if (result.isFailure()) {
+                log.warn("Failed to complete sink, result: {}, sessionId: {}", result, sessionId);
+                sink.emitComplete(reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST);
+            }
+        });
+        state.getPromiseHandlers().setStreamCompletionReject(error -> {
+            completionFuture.completeExceptionally(error);
+            // 发送错误到 Reactor Sink
+            reactor.core.publisher.Sinks.EmitResult result = sink.tryEmitError(error);
+            if (result.isFailure()) {
+                log.warn("Failed to emit error to sink, result: {}, sessionId: {}", result, sessionId);
+                sink.emitError(error, reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST);
+            }
+        });
+
+        // 异步发送请求
+        CompletableFuture.runAsync(() -> {
+            try {
+                sendInternal(
+                        requestConfig.question(), true, fluxOnChunk, null,
+                        sessionId, mergedOptions);
+            } catch (Exception e) {
+                reactor.core.publisher.Sinks.EmitResult result = sink.tryEmitError(e);
+                if (result.isFailure()) {
+                    log.warn("Failed to emit error to sink, result: {}, sessionId: {}", result, sessionId);
+                    sink.emitError(e, reactor.core.publisher.Sinks.EmitFailureHandler.FAIL_FAST);
                 }
-            });
-        }).subscribeOn(Schedulers.boundedElastic());
+            }
+        });
+
+        // 返回 Flux，订阅时自动开始消费
+        // 不使用 subscribeOn，让订阅在调用者线程中进行，确保实时性
+        return sink.asFlux()
+                .doOnCancel(() -> {
+                    log.debug("Flux subscription cancelled, cleaning up stream resources, sessionId: {}", sessionId);
+                    streamManager.cleanup(sessionId);
+                });
     }
 
     // ============================================================================
@@ -558,7 +613,26 @@ public class AgentClient implements DisposableBean {
         ExtendedSendOptions sessionOptions = context.getConfig();
         if (sessionOptions == null) return options;
         ExtendedSendOptions merged = mergeOptionsNonNull(new ExtendedSendOptions(), sessionOptions);
-        return mergeOptionsNonNull(merged, options);
+        ExtendedSendOptions result = mergeOptionsNonNull(merged, options);
+
+        // 合并历史消息到 messageParams
+        List<MessageParam> historyMessages = context.getHistoryMessages();
+        if (historyMessages != null && !historyMessages.isEmpty()) {
+            List<MessageParam> existingParams = result.getMessageParams();
+            List<MessageParam> finalParams = new ArrayList<>();
+
+            // 先添加历史消息
+            finalParams.addAll(historyMessages);
+
+            // 再添加现有的 messageParams（如果有）
+            if (existingParams != null && !existingParams.isEmpty()) {
+                finalParams.addAll(existingParams);
+            }
+
+            result.setMessageParams(finalParams);
+        }
+
+        return result;
     }
 
     private ExtendedSendOptions mergeOptionsNonNull(@Nullable ExtendedSendOptions base, @Nullable ExtendedSendOptions override) {

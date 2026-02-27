@@ -80,7 +80,7 @@ public class TestFlowExample {
 
                 // 启动 Flow
                 ColorPrinter.info("启动 Flow...");
-                String sessionId = flow.start("讲一个笑话")
+                String sessionId = flow.start("讲一个500字的笑话")
                         .block();  // Mono<String> -> String
 
                 ColorPrinter.info("Flow 已启动，sessionId: " + sessionId);

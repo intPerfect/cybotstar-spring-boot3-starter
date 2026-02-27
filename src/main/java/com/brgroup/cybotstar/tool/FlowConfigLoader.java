@@ -99,7 +99,7 @@ public class FlowConfigLoader {
         if (websocketMap != null) {
             WebSocketProperties.WebSocketPropertiesBuilder wsBuilder = WebSocketProperties.builder();
             wsBuilder.url(getStringValue(websocketMap, "url", ""));
-            wsBuilder.timeout(getIntegerValue(websocketMap, "timeout", 10000));
+            wsBuilder.timeout(getIntegerValue(websocketMap, "timeout", 30000));
             wsBuilder.maxRetries(getIntegerValue(websocketMap, "max-retries", 3));
             wsBuilder.retryInterval(getLongValue(websocketMap, "retry-interval", 1000L));
             wsBuilder.autoReconnect(getBooleanValue(websocketMap, "auto-reconnect", true));

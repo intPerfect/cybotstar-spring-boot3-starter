@@ -21,10 +21,10 @@ public class WebSocketProperties {
     private String url;
 
     /**
-     * 连接超时时间（毫秒），默认 5000
+     * 连接超时时间（毫秒），默认 30000
      */
     @Builder.Default
-    private Integer timeout = 5000;
+    private Integer timeout = 30000;
 
     /**
      * 最大重试次数，默认 3
