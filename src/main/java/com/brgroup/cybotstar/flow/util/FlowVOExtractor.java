@@ -1,14 +1,14 @@
 package com.brgroup.cybotstar.flow.util;
 
 import com.brgroup.cybotstar.flow.model.FlowData;
-import com.brgroup.cybotstar.flow.model.vo.FlowStartVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowNodeEnterVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowMessageVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowWaitingVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowEndVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowErrorVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowDebugVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowJumpVO;
+import com.brgroup.cybotstar.flow.model.FlowStartVO;
+import com.brgroup.cybotstar.flow.model.FlowNodeEnterVO;
+import com.brgroup.cybotstar.flow.model.FlowMessageVO;
+import com.brgroup.cybotstar.flow.model.FlowWaitingVO;
+import com.brgroup.cybotstar.flow.model.FlowEndVO;
+import com.brgroup.cybotstar.flow.model.FlowErrorVO;
+import com.brgroup.cybotstar.flow.model.FlowDebugVO;
+import com.brgroup.cybotstar.flow.model.FlowJumpVO;
 
 /**
  * Flow VO 提取工具类

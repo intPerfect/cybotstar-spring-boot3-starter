@@ -1,2 +1,1 @@
-com.brgroup.cybotstar.CybotStarAutoConfiguration
-
+com.brgroup.cybotstar.spring.autoconfigure.CybotStarAutoConfiguration

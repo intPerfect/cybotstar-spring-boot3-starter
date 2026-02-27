@@ -1,15 +1,15 @@
 package com.brgroup.cybotstar.examples;
 
 import com.alibaba.fastjson2.JSON;
-import com.brgroup.cybotstar.annotation.CybotStarFlow;
+import com.brgroup.cybotstar.spring.annotation.CybotStarFlow;
 import com.brgroup.cybotstar.flow.FlowClient;
-import com.brgroup.cybotstar.flow.model.vo.FlowStartVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowNodeEnterVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowEndVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowErrorVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowDebugVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowJumpVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowWaitingVO;
+import com.brgroup.cybotstar.flow.model.FlowStartVO;
+import com.brgroup.cybotstar.flow.model.FlowNodeEnterVO;
+import com.brgroup.cybotstar.flow.model.FlowEndVO;
+import com.brgroup.cybotstar.flow.model.FlowErrorVO;
+import com.brgroup.cybotstar.flow.model.FlowDebugVO;
+import com.brgroup.cybotstar.flow.model.FlowJumpVO;
+import com.brgroup.cybotstar.flow.model.FlowWaitingVO;
 import com.brgroup.cybotstar.tool.ColorPrinter;
 import com.brgroup.cybotstar.tool.ExampleContext;
 import com.brgroup.cybotstar.tool.FlowIOUtils;
@@ -97,7 +97,7 @@ public class IrFlowExample {
                         } else if (!input.trim().isEmpty()) {
                             ColorPrinter.userInput(input);
                             try {
-                                flow.send(input).join();
+                                flow.send(input).block();
                             } catch (Exception e) {
                                 ColorPrinter.error("发送消息失败", e);
                             }
@@ -131,11 +131,11 @@ public class IrFlowExample {
             try {
                 // 启动 Flow
                 // flow.startFrom("8e9796b8-e976-4646-951a-961f822d3223");
-                flow.start("");
+                flow.start("").block();
                 System.out.println("Flow 启动完成, Session ID: " + flow.getSessionId());
 
                 // 等待 Flow 完成
-                flow.done().join();
+                flow.done().block();
                 System.out.println("✨ 演示完成");
             } catch (Exception e) {
                 ColorPrinter.printState(flow);

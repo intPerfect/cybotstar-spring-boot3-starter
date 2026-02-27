@@ -1,9 +1,9 @@
 package com.brgroup.cybotstar.tool;
 
-import com.brgroup.cybotstar.config.CredentialProperties;
-import com.brgroup.cybotstar.config.FlowConfig;
-import com.brgroup.cybotstar.config.FlowProperties;
-import com.brgroup.cybotstar.config.WebSocketProperties;
+import com.brgroup.cybotstar.core.config.CredentialProperties;
+import com.brgroup.cybotstar.flow.config.FlowConfig;
+import com.brgroup.cybotstar.flow.config.FlowProperties;
+import com.brgroup.cybotstar.core.config.WebSocketProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.yaml.snakeyaml.Yaml;
 

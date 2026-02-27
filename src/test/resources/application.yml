@@ -12,7 +12,7 @@ cybotstar:
         username: zhiyuan.xi
       websocket:
         url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
-        timeout: 10000
+        timeout: 30000
         max-retries: 3
         retry-interval: 1000
         auto-reconnect: true
@@ -32,7 +32,7 @@ cybotstar:
         username: zhiyuan.xi
       websocket:
         url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
-        timeout: 10000
+        timeout: 30000
         max-retries: 3
         retry-interval: 1000
         auto-reconnect: true
@@ -57,7 +57,7 @@ cybotstar:
         open-flow-debug: false
       websocket:
         url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
-        timeout: 10000
+        timeout: 30000
         max-retries: 3
         retry-interval: 1000
         auto-reconnect: true
@@ -77,7 +77,7 @@ cybotstar:
         open-flow-uuid: f9e4dc16-e196-11f0-83fb-2a0c9eeaa681
       websocket:
         url: wss://www.cybotstar.cn/openapi/v2/ws/dialog/
-        timeout: 10000
+        timeout: 30000
         max-retries: 3
         retry-interval: 1000
         auto-reconnect: true

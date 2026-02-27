@@ -1,19 +1,18 @@
 package com.brgroup.cybotstar.examples;
 
-import com.brgroup.cybotstar.agent.model.MessageParam;
-import com.brgroup.cybotstar.annotation.CybotStarAgent;
+import com.brgroup.cybotstar.agent.model.request.MessageParam;
+import com.brgroup.cybotstar.spring.annotation.CybotStarAgent;
 import com.brgroup.cybotstar.agent.AgentClient;
-import com.brgroup.cybotstar.agent.AgentStream;
 import com.brgroup.cybotstar.agent.model.ModelOptions;
 import com.brgroup.cybotstar.agent.session.SessionContext;
 
-import static com.brgroup.cybotstar.agent.model.MessageParam.*;
+import static com.brgroup.cybotstar.agent.model.request.MessageParam.*;
+
 import com.brgroup.cybotstar.examples.mock.SessionMockData;
 import com.brgroup.cybotstar.tool.ExampleContext;
 import com.brgroup.cybotstar.tool.ColorPrinter;
 import com.brgroup.cybotstar.tool.StreamRenderer;
-import com.brgroup.cybotstar.util.Constants;
-import com.brgroup.cybotstar.util.TimeUtils;
+import com.brgroup.cybotstar.core.util.CybotStarConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.stereotype.Component;
@@ -25,17 +24,22 @@ import java.util.List;
 
 /**
  * 示例3：多轮对话与历史消息
- *
+ * <p>
  * 案例1（步骤1-3）：演示会话管理和对话记忆
  * - 使用默认会话ID进行多轮对话
  * - 测试对话上下文自动记忆
  * - 将历史对话迁移到新会话
- *
+ * <p>
  * 案例2（步骤4）：演示自定义历史消息
  * - 手动构建历史消息（system/user/assistant）
  * - 在新会话中使用自定义历史
- *
+ * <p>
  * 使用多配置方式，通过 @CybotStarAgent 注解注入指定的 AgentClient
+ * <p>
+ * 使用 Reactor 操作符处理流：
+ * - doOnNext() - 处理每个 chunk
+ * - doOnComplete() - 流完成时回调
+ * - doOnError() - 错误处理
  */
 @Slf4j
 @SpringBootApplication
@@ -69,20 +73,20 @@ public class SessionExample {
 
                 // 步骤 1：分析表格数据
                 step1DataAnalysis(renderer);
-                TimeUtils.sleep(Constants.SESSION_EXAMPLE_DELAY).join();
+                Thread.sleep(CybotStarConstants.SESSION_EXAMPLE_DELAY);
 
                 // 步骤 2：测试对话记忆
                 step2ConversationMemory(renderer);
-                TimeUtils.sleep(Constants.SESSION_EXAMPLE_DELAY).join();
+                Thread.sleep(CybotStarConstants.SESSION_EXAMPLE_DELAY);
 
                 // 步骤 3：加载对话历史进行新会话
                 step3NewSessionWithHistory(renderer);
-                TimeUtils.sleep(Constants.SESSION_EXAMPLE_DELAY).join();
+                Thread.sleep(CybotStarConstants.SESSION_EXAMPLE_DELAY);
 
                 // ============================================================================
                 // 案例2：自定义历史消息
                 // ============================================================================
-                step4CustomHistoryMessages(renderer);
+                case2CustomHistoryMessages(renderer);
 
                 ColorPrinter.success("演示完成");
             } catch (Exception e) {
@@ -116,19 +120,14 @@ public class SessionExample {
             client.session("03-agent-session");
 
             renderer.start();
-            // 创建 stream 对象，自动使用默认会话ID
-            AgentStream stream = client
+            // 创建流式请求，使用 Reactor 操作符处理流
+            client
                     .prompt(fullQuestion)
                     .option(modelOptions)
-                    .onChunk(chunk -> renderer.append(chunk))
-                    .stream();
-            // 等待流完成
-            stream.done().join();
-            renderer.finish();
-
-            if (stream.getDialogId() != null) {
-                ColorPrinter.info("[Dialog ID]: " + stream.getDialogId());
-            }
+                    .stream()
+                    .doOnNext(chunk -> renderer.append(chunk))
+                    .doOnComplete(() -> renderer.finish())
+                    .blockLast();
         }
 
         /**
@@ -142,18 +141,13 @@ public class SessionExample {
             ColorPrinter.question("Question: " + memoryQuestion);
 
             renderer.start();
-            // 创建 stream 对象，自动使用之前设置的 sessionId
-            AgentStream stream = client
-                    .prompt(memoryQuestion)
-                    .onChunk(chunk -> renderer.append(chunk))
-                    .stream();
-            // 等待流完成
-            stream.done().join();
-            renderer.finish();
-
-            if (stream.getDialogId() != null) {
-                ColorPrinter.info("[Dialog ID]: " + stream.getDialogId());
-            }
+            // 创建流式请求，使用 Reactor 操作符处理流
+            client.prompt(memoryQuestion)
+                    .session("03-agent-session")
+                    .stream()
+                    .doOnNext(chunk -> renderer.append(chunk))
+                    .doOnComplete(() -> renderer.finish())
+                    .blockLast();
         }
 
         /**
@@ -166,9 +160,9 @@ public class SessionExample {
 
             // 获取第一个会话的对话历史
             SessionContext oldContext = client.getSessionContext("03-agent-session");
-            List<MessageParam> historyMessages = oldContext.getHistoryMessages();
+            List<MessageParam> historyMessages = oldContext.getHistory();
 
-            ColorPrinter.info("附带 4 条历史会话");
+            ColorPrinter.info("附带 " + historyMessages.size() + " 条历史会话");
 
             // 创建新的会话，加载对话历史
             String newSessionId = "03-agent-session-new";
@@ -189,26 +183,20 @@ public class SessionExample {
 
             renderer.start();
             // 创建新会话，传入对话历史
-            AgentStream stream = client
-                    .prompt(historyQuestion)
+            client.prompt(historyQuestion)
                     .session(newSessionId)
                     .messages(historyMessages)
-                    .onChunk(chunk -> renderer.append(chunk))
-                    .stream();
-            // 等待流完成
-            stream.done().join();
-            renderer.finish();
-
-            if (stream.getDialogId() != null) {
-                ColorPrinter.info("[Dialog ID]: " + stream.getDialogId());
-            }
+                    .stream()
+                    .doOnNext(chunk -> renderer.append(chunk))
+                    .doOnComplete(() -> renderer.finish())
+                    .blockLast();
         }
 
         /**
          * 案例2 - 步骤 4：使用自定义历史消息
          * 演示手动构建历史消息（system/user/assistant），在新会话中使用
          */
-        private void step4CustomHistoryMessages(StreamRenderer renderer) {
+        private void case2CustomHistoryMessages(StreamRenderer renderer) {
             ColorPrinter.separator('-', 60);
             ColorPrinter.info("[案例2] 使用自定义历史消息");
 
@@ -228,19 +216,14 @@ public class SessionExample {
             String customSessionId = "03-agent-session-custom";
 
             renderer.start();
-            AgentStream stream = client
+            client
                     .prompt(customQuestion)
                     .session(customSessionId)
                     .messages(customHistory)
-                    .onChunk(chunk -> renderer.append(chunk))
-                    .stream();
-
-            stream.done().join();
-            renderer.finish();
-
-            if (stream.getDialogId() != null) {
-                ColorPrinter.info("[Dialog ID]: " + stream.getDialogId());
-            }
+                    .stream()
+                    .doOnNext(chunk -> renderer.append(chunk))
+                    .doOnComplete(() -> renderer.finish())
+                    .blockLast();
         }
     }
 }
