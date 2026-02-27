@@ -1215,6 +1215,19 @@ public class FlowClient {
                 }
                 return;
             }
+            // 检测风控拦截
+            if (answer.contains("涉及到风险")) {
+                FlowException error = FlowException.flowError("Risk control blocked: " + answer, response);
+                flowState = FlowState.ABORTED;
+                abortReason = answer;
+                emit(FlowEventType.ERROR, error);
+                errorHandler.handle(error,
+                        GenericErrorHandler.withContext(Map.of("method", "handleMessage", "riskBlocked", true)));
+                if (completionFuture != null && !completionFuture.isDone()) {
+                    completionFuture.completeExceptionally(error);
+                }
+                return;
+            }
         }
 
         // 所有消息都尝试作为 Flow 消息处理
@@ -1227,7 +1240,47 @@ public class FlowClient {
      * @param response WebSocket 响应
      */
     private void handleFlowMessage(WSResponse response) {
-        // 将整个响应解析为 FlowData 对象
+        // 当 data 为纯字符串时（如风控拦截），无法解析为 FlowData.MessageData
+        // 需要特殊处理：构建一个简化的 FlowData，将字符串放入 message 事件
+        // 当 data 为纯字符串时（如风控拦截），无法解析为 FlowData.MessageData
+        if (response.getData() instanceof String) {
+            boolean isFinished = "y".equalsIgnoreCase(response.getFinish());
+            String textContent = (String) response.getData();
+
+            // 检测风控拦截
+            if (textContent != null && textContent.contains("涉及到风险")) {
+                FlowException error = FlowException.flowError("Risk control blocked: " + textContent, response);
+                flowState = FlowState.ABORTED;
+                abortReason = textContent;
+                emit(FlowEventType.ERROR, error);
+                errorHandler.handle(error,
+                        GenericErrorHandler.withContext(Map.of("method", "handleFlowMessage", "riskBlocked", true)));
+                if (completionFuture != null && !completionFuture.isDone()) {
+                    completionFuture.completeExceptionally(error);
+                }
+                return;
+            }
+
+            // 服务端对字符串消息会发两帧：finish="n" 带文本，finish="y" 重复文本
+            // 只在 finish="n" 时发送内容，finish="y" 时发送空字符串作为完成信号，避免重复
+            Object handler = typedHandlerMap.get(FlowEventType.MESSAGE);
+            if (handler instanceof MessageHandler) {
+                emit(FlowEventType.MESSAGE, isFinished ? "" : textContent, isFinished);
+            } else if (handler instanceof MessageHandlerVO) {
+                FlowMessageVO vo = new FlowMessageVO();
+                vo.setDisplayText(isFinished ? "" : textContent);
+                vo.setFinished(isFinished);
+                emit(FlowEventType.MESSAGE, vo);
+            }
+
+            // 风控拦截等字符串响应完成后，恢复 WAITING 状态，允许用户重新输入
+            if (isFinished && flowState == FlowState.RUNNING) {
+                flowState = FlowState.WAITING;
+            }
+            return;
+        }
+
+        // data 为对象时，正常解析
         FlowData flowData = JSON.parseObject(JSON.toJSONString(response), FlowData.class);
 
         if (flowData == null) {

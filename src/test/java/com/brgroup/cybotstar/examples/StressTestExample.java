@@ -13,9 +13,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.stereotype.Component;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -129,28 +126,30 @@ public class StressTestExample {
          */
         private List<String> loadQuestions() {
             try {
-                // 尝试从 resources 目录加载
-                Path questionsPath = Paths.get("src/test/resources/questions.txt");
-                if (!Files.exists(questionsPath)) {
-                    // 如果不存在，尝试从类路径加载
-                    questionsPath = Paths.get(
-                            StressTestExample.class.getClassLoader()
-                                    .getResource("com/brgroup/cybotstar/examples/mock/questions.txt")
-                                    .toURI());
+                // 从 classpath 读取资源文件
+                var inputStream = getClass().getClassLoader().getResourceAsStream("questions.txt");
+                if (inputStream != null) {
+                    try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream))) {
+                        List<String> questions = reader.lines()
+                                .map(String::trim)
+                                .filter(line -> !line.isEmpty())
+                                .collect(Collectors.toList());
+                        if (!questions.isEmpty()) {
+                            log.info("✅ 已加载 {} 个问题", questions.size());
+                            return questions;
+                        }
+                    }
                 }
-
-                List<String> questions = Files.readAllLines(questionsPath)
-                        .stream()
-                        .map(String::trim)
-                        .filter(line -> !line.isEmpty())
-                        .collect(Collectors.toList());
-
-                log.info("✅ 已加载 {} 个问题", questions.size());
-                return questions;
             } catch (Exception e) {
                 log.error("❌ 加载问题文件失败", e);
-                return new ArrayList<>();
             }
+
+            log.warn("未找到 questions.txt 文件，使用默认问题");
+            List<String> defaults = new ArrayList<>();
+            defaults.add("你好");
+            defaults.add("介绍一下你自己");
+            defaults.add("今天天气怎么样？");
+            return defaults;
         }
 
         /**

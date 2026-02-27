@@ -201,11 +201,11 @@
     <distributionManagement>
         <repository>
             <id>br_server</id>
-            <url>https://maven.100credit.cn/repository/maven-releases/</url>
+            <url>http://localhost:8868/repository/maven-releases/</url>
         </repository>
         <snapshotRepository>
             <id>br_server_snapshot</id>
-            <url>https://maven.100credit.cn/repository/maven-snapshots/</url>
+            <url>http://localhost:8868/repository/maven-snapshots/</url>
         </snapshotRepository>
     </distributionManagement>
 
