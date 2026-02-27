@@ -2,24 +2,32 @@ package com.brgroup.cybotstar.examples;
 
 import com.brgroup.cybotstar.annotation.CybotStarFlow;
 import com.brgroup.cybotstar.flow.FlowClient;
-import com.brgroup.cybotstar.flow.model.vo.FlowWaitingVO;
+import com.brgroup.cybotstar.flow.model.vo.FlowMessageVO;
 import com.brgroup.cybotstar.flow.model.vo.FlowEndVO;
 import com.brgroup.cybotstar.flow.model.vo.FlowErrorVO;
 import com.brgroup.cybotstar.tool.ExampleContext;
-import com.brgroup.cybotstar.tool.FlowIOUtils;
+import com.brgroup.cybotstar.tool.ColorPrinter;
+import com.brgroup.cybotstar.tool.StreamRenderer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.stereotype.Component;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import java.util.concurrent.CompletableFuture;
 
 /**
- * Test Flow 对话流示例
- * 演示如何使用 FlowClient 进行多轮对话
- * 使用多配置方式，通过 @CybotStarFlow 注解注入指定的 FlowClient
- *
- * @author zhiyuan.xi
+ * FlowClient 使用示例
+ * 展示 Flow 的基础用法，包括启动、交互和完成
+ * 使用 @CybotStarFlow 注解注入指定的 FlowClient
+ * <p>
+ * 响应式 API：
+ * - flow.start(input) -> Mono&lt;String&gt; (返回 sessionId)
+ * - flow.send(input)  -> Mono&lt;Void&gt;
+ * - flow.done()       -> Mono&lt;Void&gt; (等待 Flow 完成)
+ * <p>
+ * 事件订阅（回调风格）：
+ * - onMessage(handler) - 接收消息
+ * - onEnd(handler)     - Flow 完成
+ * - onError(handler)   - 错误处理
  */
 @Slf4j
 @SpringBootApplication
@@ -41,71 +49,52 @@ public class TestFlowExample {
         private FlowClient flow;
 
         public void execute() {
-            System.out.println("\n" + "=".repeat(60));
-            System.out.println("🚀 Test Flow Runtime 引擎演示");
-            System.out.println("=".repeat(60));
+            try {
+                ColorPrinter.title("🚀 Flow 基础示例");
+                ColorPrinter.separator('=', 60);
 
-            log.info("FlowClient 已注入完成");
+                StreamRenderer renderer = new StreamRenderer();
 
-            // 创建输入输出工具
-            FlowIOUtils.StreamConsumer streamConsumer = FlowIOUtils.createStreamConsumer("🤖 Bot: ");
-            FlowIOUtils.StreamConsumer outputConsumer = new FlowIOUtils.StreamConsumer("");
-
-            // 流式输出 - 使用简化的 MessageHandler（接收 String msg, boolean isFinished）
-            flow.onMessage((String msg, boolean isFinished) -> {
-                streamConsumer.chunk(msg != null ? msg : "");
-                if (isFinished) {
-                    streamConsumer.complete();
-                }
-            });
-
-            // 等待输入 - 接收 FlowWaitingVO（提取的有意义字段）
-            flow.onWaiting((FlowWaitingVO vo) -> {
-                // 由于 readInput() 是阻塞操作，这里使用异步处理避免阻塞 WebSocket 消息处理线程
-                // 如果您的操作是非阻塞的（如更新 UI、设置标志），则不需要异步包装
-                CompletableFuture.runAsync(() -> {
-                    String input = FlowIOUtils.readInput();
-                    if (input != null) {
-                        String lowerInput = input.toLowerCase().trim();
-                        if ("quit".equals(lowerInput) || "exit".equals(lowerInput)) {
-                            System.out.println("👋 用户退出");
-                            flow.abort("用户主动退出");
-                        } else if (!input.trim().isEmpty()) {
-                            System.out.println("👤 User: " + input);
-                            try {
-                                flow.send(input).join();
-                            } catch (Exception e) {
-                                log.error("发送消息失败", e);
-                            }
+                // 注册事件处理器
+                flow.onMessage((FlowMessageVO vo) -> {
+                    if (!vo.isFinished()) {
+                        if (!renderer.isStreaming()) {
+                            renderer.start();
                         }
+                        renderer.append(vo.getDisplayText());
                     }
                 });
-            });
 
-            // 订阅结束事件 - 接收 FlowEndVO（提取的有意义字段）
-            flow.onEnd((FlowEndVO vo) -> {
-                outputConsumer.chunk("\n\n✅ Flow 已完成\n");
-            });
+                flow.onEnd((FlowEndVO vo) -> {
+                    renderer.finish();
+                    ColorPrinter.success("Flow 执行完成");
+                    if (vo.getFinalText() != null && !vo.getFinalText().isEmpty()) {
+                        ColorPrinter.info("最终输出: " + vo.getFinalText());
+                    }
+                });
 
-            // 订阅错误事件 - 接收 FlowErrorVO（提取的有意义字段）
-            flow.onError((FlowErrorVO vo) -> {
-                outputConsumer.chunk("❌ 错误: " + vo.getErrorMessage() + "\n");
-                outputConsumer.chunk("📊 当前状态: " + flow.getState() + "\n");
-            });
+                flow.onError((FlowErrorVO vo) -> {
+                    renderer.finish();
+                    ColorPrinter.error("Flow 错误: " + vo.getErrorMessage());
+                });
 
-            try {
-                // 启动 Flow（异步，立即返回）
-                String sessionId = flow.start("");
-                System.out.println("📋 Session ID: " + sessionId);
+                // 启动 Flow
+                ColorPrinter.info("启动 Flow...");
+                String sessionId = flow.start("你好，请介绍一下你自己")
+                        .block();  // Mono<String> -> String
+
+                ColorPrinter.info("Flow 已启动，sessionId: " + sessionId);
+
                 // 等待 Flow 完成
-                flow.done().join();
-                System.out.println("✨ 演示完成");
+                flow.done().block();  // Mono<Void> -> 阻塞等待完成
+
+                ColorPrinter.separator('=', 60);
+                ColorPrinter.success("示例执行完成");
+
             } catch (Exception e) {
-                log.error("Flow 执行出错", e);
+                log.error("发生错误", e);
             } finally {
-                // 清理资源
                 flow.close();
-                FlowIOUtils.closeSharedReader();
             }
         }
     }

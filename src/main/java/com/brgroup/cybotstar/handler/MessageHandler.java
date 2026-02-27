@@ -8,8 +8,7 @@ import com.brgroup.cybotstar.model.common.ResponseType;
 import com.brgroup.cybotstar.model.common.SessionState;
 import com.brgroup.cybotstar.model.ws.WSResponse;
 import com.brgroup.cybotstar.model.ws.WSResponseData;
-import com.brgroup.cybotstar.util.ClientUtils;
-import com.brgroup.cybotstar.util.FormatUtils;
+import com.brgroup.cybotstar.util.CybotStarUtils;
 import com.alibaba.fastjson2.JSON;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -203,7 +202,7 @@ public class MessageHandler {
         if (state.getSendState().isSending() && state.getTimeout() > 0 && state.getRefreshTimeout() != null) {
             state.getRefreshTimeout().run();
             log.debug("Refreshing timeout timer, sessionId: {}, timeout: {}ms",
-                    FormatUtils.formatSessionId(sessionId), state.getTimeout());
+                    CybotStarUtils.formatSessionId(sessionId), state.getTimeout());
         }
     }
 
@@ -218,7 +217,7 @@ public class MessageHandler {
 
         // 更新缓冲区
         if (state.getStreamBuffer().getMsgId() == null || state.getStreamBuffer().getMsgId().isEmpty()) {
-            state.getStreamBuffer().setMsgId(ClientUtils.generateMessageId("stream"));
+            state.getStreamBuffer().setMsgId(CybotStarUtils.generateMessageId("stream"));
             state.getStreamBuffer().getBuffer().setLength(0);
         }
         state.getStreamBuffer().getBuffer().append(text);
@@ -345,7 +344,7 @@ public class MessageHandler {
                 .orElse(null);
         String typeName = indexType == ResponseIndex.ONLINE_SEARCH ? "online_search" : "images";
         log.debug("Received special response type, sessionId: {}, type: {}",
-                FormatUtils.formatSessionId(sessionId), typeName);
+                CybotStarUtils.formatSessionId(sessionId), typeName);
 
         // 如果注册了 onMessage 回调，传递特殊内容
         if (callbacks != null && callbacks.getOnMessage() != null) {
@@ -367,7 +366,7 @@ public class MessageHandler {
     private void handleReasoningResponse(@NonNull WSResponse response, @NonNull String sessionId, @NonNull StreamState state,
             SessionContext.@Nullable AgentCallbacks callbacks) {
         log.debug("Received Reasoning response, sessionId: {}",
-                FormatUtils.formatSessionId(sessionId));
+                CybotStarUtils.formatSessionId(sessionId));
 
         // 刷新超时定时器：当收到 reasoning 数据时，刷新超时定时器，避免在 reasoning 输出过程中超时
         refreshTimeoutIfNeeded(state, sessionId);
@@ -390,7 +389,7 @@ public class MessageHandler {
     private void handleErrorResponse(@NonNull WSResponse response, @NonNull String sessionId, @NonNull StreamState state,
             SessionContext.@Nullable AgentCallbacks callbacks) {
         log.debug("Received error response, sessionId: {}, code: {}, message: {}",
-                FormatUtils.formatSessionId(sessionId), response.getCode(), response.getMessage());
+                CybotStarUtils.formatSessionId(sessionId), response.getCode(), response.getMessage());
 
         // 清除超时定时器
         if (state.getTimeoutId() != null) {

@@ -3,14 +3,13 @@ package com.brgroup.cybotstar.agent.internal;
 import com.brgroup.cybotstar.agent.model.ExtendedSendOptions;
 import com.brgroup.cybotstar.agent.model.ModelOptions;
 import com.brgroup.cybotstar.agent.model.MessageParam;
-import com.brgroup.cybotstar.util.ClientUtils;
+import com.brgroup.cybotstar.util.CybotStarUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * 请求构建器
@@ -25,8 +24,6 @@ public class RequestBuilder {
     private ExtendedSendOptions requestOptions;
     @Nullable
     private String requestSessionId;
-    @Nullable
-    private Consumer<String> requestOnChunk;
 
     /**
      * 设置用户问题
@@ -65,15 +62,6 @@ public class RequestBuilder {
     @NonNull
     public RequestBuilder session(@NonNull String sessionId) {
         this.requestSessionId = sessionId;
-        return this;
-    }
-
-    /**
-     * 设置流式回调
-     */
-    @NonNull
-    public RequestBuilder onChunk(@NonNull Consumer<String> callback) {
-        this.requestOnChunk = callback;
         return this;
     }
 
@@ -120,8 +108,7 @@ public class RequestBuilder {
         return new RequestConfig(
                 requestQuestion,
                 requestSessionId != null ? requestSessionId : defaultSessionId,
-                requestOptions,
-                requestOnChunk);
+                requestOptions);
     }
 
     /**
@@ -131,7 +118,6 @@ public class RequestBuilder {
         requestQuestion = null;
         requestOptions = null;
         requestSessionId = null;
-        requestOnChunk = null;
     }
 
     /**
@@ -142,7 +128,7 @@ public class RequestBuilder {
         if (override == null) {
             return base;
         }
-        ExtendedSendOptions merged = ClientUtils.mergeOptions(base, new ExtendedSendOptions());
+        ExtendedSendOptions merged = CybotStarUtils.mergeOptions(base, new ExtendedSendOptions());
         if (override.getExtraHeader() != null) {
             merged.setExtraHeader(override.getExtraHeader());
         }
@@ -168,9 +154,9 @@ public class RequestBuilder {
     }
 
     /**
-         * 请求配置
-         */
-        public record RequestConfig(@NonNull String question, @NonNull String sessionId,
-                                    @Nullable ExtendedSendOptions options, @Nullable Consumer<String> onChunk) {
+     * 请求配置
+     */
+    public record RequestConfig(@NonNull String question, @NonNull String sessionId,
+                                @Nullable ExtendedSendOptions options) {
     }
 }

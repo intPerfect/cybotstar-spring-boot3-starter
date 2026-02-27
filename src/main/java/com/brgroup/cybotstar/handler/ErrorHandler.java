@@ -3,7 +3,7 @@ package com.brgroup.cybotstar.handler;
 import com.brgroup.cybotstar.agent.session.SessionContext;
 import com.brgroup.cybotstar.agent.exception.AgentException;
 import com.brgroup.cybotstar.model.ws.WSResponse;
-import com.brgroup.cybotstar.util.FormatUtils;
+import com.brgroup.cybotstar.util.CybotStarUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -29,7 +29,7 @@ public class ErrorHandler {
         String message = response.getMessage() != null ? response.getMessage() : "未知错误";
 
         log.error("Received error response, sessionId: {}, code: {}, message: {}",
-                FormatUtils.formatSessionId(sessionId), code, message);
+                CybotStarUtils.formatSessionId(sessionId), code, message);
 
         AgentException error = AgentException.requestFailed(
                 String.format("Websocket 服务器返回错误: code=%s, message=%s", code, message));
@@ -51,7 +51,7 @@ public class ErrorHandler {
                 : AgentException.wrap(exception);
 
         log.error("Exception occurred, sessionId: {}, error: {}",
-                FormatUtils.formatSessionId(sessionId), error.getMessage(), exception);
+                CybotStarUtils.formatSessionId(sessionId), error.getMessage(), exception);
 
         triggerErrorCallback(error, callbacks);
     }
@@ -66,7 +66,7 @@ public class ErrorHandler {
      */
     public void handle(@Nullable Object error, @NonNull String sessionId, SessionContext.@Nullable AgentCallbacks callbacks) {
         if (error == null) {
-            log.warn("Received null error, sessionId: {}", FormatUtils.formatSessionId(sessionId));
+            log.warn("Received null error, sessionId: {}", CybotStarUtils.formatSessionId(sessionId));
             return;
         }
 
@@ -76,7 +76,7 @@ public class ErrorHandler {
             handleException((Throwable) error, sessionId, callbacks);
         } else {
             log.warn("Unknown error type: {}, sessionId: {}", error.getClass().getName(),
-                    FormatUtils.formatSessionId(sessionId));
+                    CybotStarUtils.formatSessionId(sessionId));
             AgentException wrappedError = AgentException.requestFailed("未知错误类型: " + error);
             triggerErrorCallback(wrappedError, callbacks);
         }

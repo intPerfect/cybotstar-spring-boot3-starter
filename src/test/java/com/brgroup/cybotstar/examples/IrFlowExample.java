@@ -1,31 +1,35 @@
 package com.brgroup.cybotstar.examples;
 
-import com.alibaba.fastjson2.JSON;
 import com.brgroup.cybotstar.annotation.CybotStarFlow;
 import com.brgroup.cybotstar.flow.FlowClient;
-import com.brgroup.cybotstar.flow.model.vo.FlowStartVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowNodeEnterVO;
+import com.brgroup.cybotstar.flow.model.vo.FlowMessageVO;
 import com.brgroup.cybotstar.flow.model.vo.FlowEndVO;
 import com.brgroup.cybotstar.flow.model.vo.FlowErrorVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowDebugVO;
-import com.brgroup.cybotstar.flow.model.vo.FlowJumpVO;
 import com.brgroup.cybotstar.flow.model.vo.FlowWaitingVO;
-import com.brgroup.cybotstar.tool.ColorPrinter;
 import com.brgroup.cybotstar.tool.ExampleContext;
-import com.brgroup.cybotstar.tool.FlowIOUtils;
+import com.brgroup.cybotstar.tool.ColorPrinter;
+import com.brgroup.cybotstar.tool.StreamRenderer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.stereotype.Component;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import java.util.concurrent.CompletableFuture;
 
 /**
- * IR Flow 对话流示例
- * 演示如何使用 FlowClient 进行多轮对话
- * 使用多配置方式，通过 @CybotStarFlow 注解注入指定的 FlowClient
- *
- * @author zhiyuan.xi
+ * IR Flow 示例
+ * 展示交互式 Flow 的用法，包括多轮对话和用户输入
+ * 使用 @CybotStarFlow 注解注入指定的 FlowClient
+ * <p>
+ * 响应式 API：
+ * - flow.start(input) -> Mono&lt;String&gt; (返回 sessionId)
+ * - flow.send(input)  -> Mono&lt;Void&gt;
+ * - flow.done()       -> Mono&lt;Void&gt; (等待 Flow 完成)
+ * <p>
+ * 事件订阅（回调风格）：
+ * - onMessage(handler) - 接收消息
+ * - onWaiting(handler) - 等待用户输入
+ * - onEnd(handler)     - Flow 完成
+ * - onError(handler)   - 错误处理
  */
 @Slf4j
 @SpringBootApplication
@@ -47,103 +51,65 @@ public class IrFlowExample {
         private FlowClient flow;
 
         public void execute() {
-            ColorPrinter.separator('=', 60);
-            ColorPrinter.title("🚀 IR Flow Runtime 引擎演示");
-            ColorPrinter.separator('=', 60);
+            try {
+                ColorPrinter.title("🚀 IR Flow 交互式示例");
+                ColorPrinter.separator('=', 60);
 
-            // 创建输入输出工具
-            FlowIOUtils.StreamConsumer streamConsumer = FlowIOUtils.createStreamConsumer("🤖 Bot: ");
-            FlowIOUtils.StreamConsumer outputConsumer = new FlowIOUtils.StreamConsumer("");
+                StreamRenderer renderer = new StreamRenderer();
 
-            // Flow Start
-            flow.onStart((FlowStartVO vo) -> {
-                System.out.println("📋 [START] FlowStartVO: " + JSON.toJSONString(vo));
-            });
-
-            // Flow End
-            flow.onEnd((FlowEndVO vo) -> {
-                ColorPrinter.printState(flow);
-                outputConsumer.chunk("\n\n✅ Flow 已完成\n");
-
-                System.out.println("📋 [END] FlowEndVO: " + JSON.toJSONString(vo));
-            });
-
-            // Node Enter
-            flow.onNodeEnter((FlowNodeEnterVO vo) -> {
-                System.out.println("📋 [NODE_ENTER] FlowNodeEnterVO: " + JSON.toJSONString(vo));
-            });
-
-            // ⭐Message
-            flow.onMessage((String msg, boolean isFinished) -> {
-                streamConsumer.chunk(msg != null ? msg : "");
-                if (isFinished) {
-                    streamConsumer.complete();
-                }
-            });
-
-            // Waiting
-            flow.onWaiting((FlowWaitingVO vo) -> {
-                System.out.println("📋 [WAITING] FlowWaitingVO: " + JSON.toJSONString(vo));
-
-                // Flow 等待输入...
-                // 由于 readInput() 是阻塞操作，这里使用异步处理避免阻塞 WebSocket 消息处理线程
-                // 如果您的操作是非阻塞的（如更新 UI、设置标志），则不需要异步包装
-                CompletableFuture.runAsync(() -> {
-                    String input = FlowIOUtils.readInput();
-                    if (input != null) {
-                        String lowerInput = input.toLowerCase().trim();
-                        if ("quit".equals(lowerInput) || "exit".equals(lowerInput)) {
-                            flow.abort("用户主动退出");
-                        } else if (!input.trim().isEmpty()) {
-                            ColorPrinter.userInput(input);
-                            try {
-                                flow.send(input).join();
-                            } catch (Exception e) {
-                                ColorPrinter.error("发送消息失败", e);
-                            }
+                // 注册事件处理器
+                flow.onMessage((FlowMessageVO vo) -> {
+                    if (!vo.isFinished()) {
+                        if (!renderer.isStreaming()) {
+                            renderer.start();
                         }
+                        renderer.append(vo.getDisplayText());
                     }
                 });
-            });
 
+                flow.onWaiting((FlowWaitingVO vo) -> {
+                    renderer.finish();
+                    ColorPrinter.info("等待用户输入...");
+                });
 
-            // Flow Error
-            flow.onError((FlowErrorVO vo) -> {
-                outputConsumer.chunk("❌ Flow 发生错误: " + vo.getErrorMessage());
-                outputConsumer.chunk(", 📊 当前状态: " + flow.getState() + "\n");
+                flow.onEnd((FlowEndVO vo) -> {
+                    renderer.finish();
+                    ColorPrinter.success("Flow 执行完成");
+                    if (vo.getFinalText() != null && !vo.getFinalText().isEmpty()) {
+                        ColorPrinter.info("最终输出: " + vo.getFinalText());
+                    }
+                });
 
-                System.out.println("📋 [ERROR] FlowErrorVO: " + JSON.toJSONString(vo));
-            });
+                flow.onError((FlowErrorVO vo) -> {
+                    renderer.finish();
+                    ColorPrinter.error("Flow 错误: " + vo.getErrorMessage());
+                });
 
-            // Flow Debug (open-flow-debug: true)
-            flow.onDebug((FlowDebugVO vo) -> {
-                System.out.println("📋 [DEBUG] FlowDebugVO: " + JSON.toJSONString(vo));
-            });
-
-            // Flow Jump (multi-flow)
-            flow.onJump((FlowJumpVO vo) -> {
-                ColorPrinter.jump("跳转事件: " + vo.getJumpType());
-                outputConsumer.chunk("🔄 Jump: " + vo.getJumpType() + "\n");
-                // 打印 FlowJumpVO 对象（JSON 格式，一行）
-                System.out.println("📋 [JUMP] FlowJumpVO: " + JSON.toJSONString(vo));
-            });
-
-            try {
                 // 启动 Flow
-                // flow.startFrom("8e9796b8-e976-4646-951a-961f822d3223");
-                flow.start("");
-                System.out.println("Flow 启动完成, Session ID: " + flow.getSessionId());
+                ColorPrinter.info("启动 IR Flow...");
+                String sessionId = flow.start("你好")
+                        .block();  // Mono<String> -> String
+
+                ColorPrinter.info("Flow 已启动，sessionId: " + sessionId);
+
+                // 等待进入等待状态后发送用户输入
+                // 在实际应用中，这里会等待用户从控制台输入
+                Thread.sleep(2000);
+
+                // 发送用户输入
+                ColorPrinter.info("发送用户输入: 我想查询余额");
+                flow.send("我想查询余额").block();
 
                 // 等待 Flow 完成
-                flow.done().join();
-                System.out.println("✨ 演示完成");
+                flow.done().block();  // Mono<Void> -> 阻塞等待完成
+
+                ColorPrinter.separator('=', 60);
+                ColorPrinter.success("示例执行完成");
+
             } catch (Exception e) {
-                ColorPrinter.printState(flow);
-                ColorPrinter.error("Flow 执行出错", e);
+                log.error("发生错误", e);
             } finally {
-                // 清理资源
                 flow.close();
-                FlowIOUtils.closeSharedReader();
             }
         }
     }

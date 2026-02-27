@@ -34,7 +34,6 @@
         <spring-boot.version>3.5.7</spring-boot.version>
         <lombok.version>1.18.30</lombok.version>
         <logback.version>1.5.18</logback.version>
-        <okhttp.version>4.12.0</okhttp.version>
         <fastjson2.version>2.0.60</fastjson2.version>
         <hutool.version>5.8.38</hutool.version>
         <commons-lang3.version>3.19.0</commons-lang3.version>
@@ -74,18 +73,6 @@
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
             <optional>true</optional>
-        </dependency>
-
-        <!-- HTTP Client -->
-        <dependency>
-            <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>okhttp</artifactId>
-            <version>${okhttp.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.dtflys.forest</groupId>
-            <artifactId>forest-spring-boot3-starter</artifactId>
-            <version>1.7.1</version>
         </dependency>
 
         <!-- JSON Processing -->

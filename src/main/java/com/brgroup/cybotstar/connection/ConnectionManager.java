@@ -2,7 +2,7 @@ package com.brgroup.cybotstar.connection;
 
 import com.brgroup.cybotstar.config.AgentConfig;
 import com.brgroup.cybotstar.model.common.ConnectionState;
-import com.brgroup.cybotstar.util.FormatUtils;
+import com.brgroup.cybotstar.util.CybotStarUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 
@@ -60,7 +60,7 @@ public class ConnectionManager implements IConnectionManager, AutoCloseable {
     @NonNull
     public WebSocketConnection getConnection(@NonNull String sessionId) {
         return connections.computeIfAbsent(sessionId, id -> {
-            log.debug("Creating new WebSocket connection, sessionId: {}", FormatUtils.formatSessionId(id));
+            log.debug("Creating new WebSocket connection, sessionId: {}", CybotStarUtils.formatSessionId(id));
             WebSocketConnection connection = new WebSocketConnection(config);
             // 监听连接状态变化
             connection.onStateChange(state -> notifyStateChange(id, state));
@@ -116,11 +116,11 @@ public class ConnectionManager implements IConnectionManager, AutoCloseable {
     @Override
     @NonNull
     public CompletableFuture<Void> connect(@NonNull String sessionId) {
-        log.debug("Establishing WebSocket connection, sessionId: {}", FormatUtils.formatSessionId(sessionId));
+        log.debug("Establishing WebSocket connection, sessionId: {}", CybotStarUtils.formatSessionId(sessionId));
         WebSocketConnection connection = getConnection(sessionId);
         return connection.connect().thenRun(() -> {
             log.debug("WebSocket connection established successfully, sessionId: {}",
-                    FormatUtils.formatSessionId(sessionId));
+                    CybotStarUtils.formatSessionId(sessionId));
         });
     }
 
@@ -134,7 +134,7 @@ public class ConnectionManager implements IConnectionManager, AutoCloseable {
      */
     @Override
     public void disconnect(@NonNull String sessionId) {
-        log.debug("Disconnecting WebSocket connection, sessionId: {}", FormatUtils.formatSessionId(sessionId));
+        log.debug("Disconnecting WebSocket connection, sessionId: {}", CybotStarUtils.formatSessionId(sessionId));
         WebSocketConnection connection = connections.get(sessionId);
         if (connection != null) {
             // 先关闭连接，触发状态回调（此时连接仍在 Manager 中）
@@ -183,7 +183,7 @@ public class ConnectionManager implements IConnectionManager, AutoCloseable {
                 connection.close();
             } catch (Exception e) {
                 log.debug("Error occurred while closing connection, sessionId: {}",
-                        FormatUtils.formatSessionId(sessionId), e);
+                        CybotStarUtils.formatSessionId(sessionId), e);
             }
         });
         connections.clear();

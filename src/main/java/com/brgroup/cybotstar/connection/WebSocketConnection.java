@@ -6,7 +6,7 @@ import com.brgroup.cybotstar.model.common.ConnectionState;
 import com.brgroup.cybotstar.model.common.ResponseType;
 import com.brgroup.cybotstar.model.ws.WSPayload;
 import com.brgroup.cybotstar.model.ws.WSResponse;
-import com.brgroup.cybotstar.util.Constants;
+import com.brgroup.cybotstar.util.CybotStarConstants;
 import com.brgroup.cybotstar.util.payload.PayloadBuilder;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
@@ -216,7 +216,7 @@ public class WebSocketConnection implements AutoCloseable {
     private void doConnect(@NonNull CompletableFuture<Void> future) {
         long timeout = config.getWebsocket().getTimeout() != null
                 ? config.getWebsocket().getTimeout()
-                : Constants.DEFAULT_WS_TIMEOUT;
+                : CybotStarConstants.DEFAULT_WS_TIMEOUT;
         setState(ConnectionState.CONNECTING);
 
         try {
@@ -570,7 +570,7 @@ public class WebSocketConnection implements AutoCloseable {
     private void scheduleReconnect() {
         int maxRetries = config.getWebsocket().getMaxRetries() != null
                 ? config.getWebsocket().getMaxRetries()
-                : Constants.DEFAULT_MAX_RETRIES;
+                : CybotStarConstants.DEFAULT_MAX_RETRIES;
 
         int currentAttempts = reconnectAttempts.get();
         if (currentAttempts >= maxRetries) {
@@ -584,7 +584,7 @@ public class WebSocketConnection implements AutoCloseable {
 
         long interval = config.getWebsocket().getRetryInterval() != null
                 ? config.getWebsocket().getRetryInterval()
-                : Constants.DEFAULT_RETRY_INTERVAL;
+                : CybotStarConstants.DEFAULT_RETRY_INTERVAL;
 
         reconnectTimer = scheduler.schedule(() -> {
             // 清除定时器引用，允许下次重连

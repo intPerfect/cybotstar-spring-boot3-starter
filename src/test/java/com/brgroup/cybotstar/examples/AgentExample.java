@@ -3,7 +3,6 @@ package com.brgroup.cybotstar.examples;
 import cn.hutool.core.lang.UUID;
 import com.brgroup.cybotstar.annotation.CybotStarAgent;
 import com.brgroup.cybotstar.agent.AgentClient;
-import com.brgroup.cybotstar.agent.AgentStream;
 import com.brgroup.cybotstar.agent.model.ModelOptions;
 import com.brgroup.cybotstar.tool.ExampleContext;
 import com.brgroup.cybotstar.tool.StreamRenderer;
@@ -20,7 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>
  * 示例1：基础用法
  * - 直接使用 AgentClient 发送消息并等待完整响应
- * - 使用 .send() 进行同步阻塞调用
+ * - 使用 .send() 返回 Mono&lt;String&gt; 进行响应式调用
  * <p>
  * 示例2：流式响应
  * - 链式调用和流式处理
@@ -28,9 +27,14 @@ import org.springframework.beans.factory.annotation.Autowired;
  * - 原始请求/响应回调：使用 onRawRequest() 和 onRawResponse() 监听 WebSocket 原始数据（用于调试）
  * - Reasoning 回调：使用 onReasoning() 监听 AI 的思考过程
  * <p>
- * 严格遵循 TypeScript SDK 写法：
- * const stream = await client.prompt(...).onChunk(...).stream();
- * await stream.done();
+ * 响应式风格：
+ * client.prompt(...).send()  -> Mono&lt;String&gt;
+ * client.prompt(...).stream() -> Flux&lt;String&gt;
+ * <p>
+ * 使用 Reactor 操作符处理流：
+ * - doOnNext() - 处理每个 chunk
+ * - doOnComplete() - 流完成时回调
+ * - doOnError() - 错误处理
  */
 @Slf4j
 @SpringBootApplication
@@ -77,7 +81,8 @@ public class AgentExample {
                 // 发送消息并等待完整响应（连接会自动建立）
                 log.info("发送消息: 你好");
                 String response = client.prompt("你好")
-                        .send();
+                        .send()
+                        .block();  // Mono<String> -> String
                 log.info("收到回复: {}", response);
             } catch (Exception e) {
                 log.error("基础示例发生错误", e);
@@ -87,6 +92,7 @@ public class AgentExample {
         /**
          * 示例2：流式响应
          * 展示链式调用和流式处理的使用
+         * 使用 Reactor 的 doOnNext/doOnComplete/doOnError 操作符处理流
          */
         private void streamExample() {
             log.info("\n=== 示例2：流式响应 ===");
@@ -123,12 +129,14 @@ public class AgentExample {
                 String sessionId = UUID.fastUUID().toString();
                 log.info("开始发送请求，sessionId: {}", sessionId);
 
-                // 创建 stream 对象，使用链式调用（连接会自动建立）
-                AgentStream stream = client
+                // 创建流式请求，使用链式调用（连接会自动建立）
+                // stream() 返回 Flux<String>，使用 Reactor 操作符处理流
+                client
                         .prompt("介绍一下你自己")
                         .session(sessionId)
                         .option(modelOptions)
-                        .onChunk(chunk -> {
+                        .stream()
+                        .doOnNext(chunk -> {
                             // 当开始接收 answer 时，完成 reasoning 输出并开始 answer
                             if (!renderer.isStreaming()) {
                                 renderer.finishReasoning();
@@ -136,11 +144,15 @@ public class AgentExample {
                             }
                             renderer.append(chunk);
                         })
-                        .stream();
-
-                log.info("等待流完成...");
-                stream.done().join();
-                renderer.finish();
+                        .doOnComplete(() -> {
+                            renderer.finish();
+                            log.info("流式响应完成");
+                        })
+                        .doOnError(e -> {
+                            renderer.finish();
+                            log.error("流式响应发生错误", e);
+                        })
+                        .blockLast();  // 等待流完成
 
             } catch (Exception e) {
                 log.error("流式示例发生错误", e);

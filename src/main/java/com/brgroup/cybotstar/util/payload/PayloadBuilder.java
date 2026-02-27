@@ -5,7 +5,7 @@ import com.brgroup.cybotstar.agent.model.ChatHistoryItem;
 import com.brgroup.cybotstar.agent.model.MessageParam;
 import com.brgroup.cybotstar.agent.model.ExtendedSendOptions;
 import com.brgroup.cybotstar.model.ws.WSPayload;
-import com.brgroup.cybotstar.util.FormatUtils;
+import com.brgroup.cybotstar.util.CybotStarUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jspecify.annotations.NonNull;
@@ -104,7 +104,7 @@ public class PayloadBuilder {
                     if (tipMessageParams != null && !tipMessageParams.isEmpty()) {
                         // 同时存在时，进行变量替换
                         payload.setTipMessageExtra(
-                                FormatUtils.replaceTemplateVariables(tipMessageExtra, tipMessageParams));
+                                CybotStarUtils.replaceTemplateVariables(tipMessageExtra, tipMessageParams));
                     } else {
                         payload.setTipMessageExtra(tipMessageExtra);
                     }
