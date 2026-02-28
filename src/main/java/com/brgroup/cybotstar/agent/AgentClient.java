@@ -13,7 +13,7 @@ import com.brgroup.cybotstar.agent.handler.ReactiveMessageHandler;
 import com.brgroup.cybotstar.core.model.ws.WSPayload;
 import com.brgroup.cybotstar.core.util.CybotStarConstants;
 import com.brgroup.cybotstar.core.util.CybotStarUtils;
-import com.brgroup.cybotstar.agent.util.PayloadBuilder;
+import com.brgroup.cybotstar.core.util.payload.PayloadBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -217,7 +217,10 @@ public class AgentClient implements DisposableBean {
                     if (rawResponseCb != null) {
                         context.messageStream()
                                 .doOnNext(rawResponseCb::accept)
-                                .subscribe();
+                                .subscribe(
+                                    v -> {}, // onNext handled by doOnNext
+                                    error -> log.error("Raw response callback error for session: {}", sessionId, error)
+                                );
                     }
 
                     // 使用事件流
@@ -245,11 +248,17 @@ public class AgentClient implements DisposableBean {
                                     context.addHistory(MessageParam.builder()
                                             .role("user")
                                             .content(finalQuestion)
-                                            .build()).subscribe();
+                                            .build()).subscribe(
+                                                v -> {},
+                                                error -> log.error("Failed to save user history for session: {}", sessionId, error)
+                                            );
                                     context.addHistory(MessageParam.builder()
                                             .role("assistant")
                                             .content(fullText)
-                                            .build()).subscribe();
+                                            .build()).subscribe(
+                                                v -> {},
+                                                error -> log.error("Failed to save assistant history for session: {}", sessionId, error)
+                                            );
                                 }
                             });
                         })

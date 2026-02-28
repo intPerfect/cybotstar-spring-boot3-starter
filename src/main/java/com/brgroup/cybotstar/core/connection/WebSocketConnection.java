@@ -7,7 +7,7 @@ import com.brgroup.cybotstar.core.model.common.ResponseType;
 import com.brgroup.cybotstar.core.model.ws.WSPayload;
 import com.brgroup.cybotstar.core.model.ws.WSResponse;
 import com.brgroup.cybotstar.core.util.CybotStarConstants;
-import com.brgroup.cybotstar.agent.util.PayloadBuilder;
+import com.brgroup.cybotstar.core.util.payload.PayloadBuilder;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;

@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.Disposable;
 
 import java.time.Duration;
 import java.util.List;
@@ -62,6 +63,10 @@ public class FlowClient {
 
     // 完成信号 Sink
     private final Sinks.One<Void> completionSink = Sinks.one();
+
+    // 订阅管理（防止泄漏）
+    private final AtomicReference<Disposable> messageSubscription = new AtomicReference<>();
+    private final AtomicReference<Disposable> stateSubscription = new AtomicReference<>();
 
     // 全局错误处理器
     private volatile Consumer<Throwable> globalErrorHandler = e -> log.error("Unhandled error in FlowClient", e);
@@ -225,7 +230,24 @@ public class FlowClient {
 
     public void close() {
         flowState.set(FlowState.COMPLETED);
-        connectionManager.disconnectAll().subscribe();
+
+        // 清理订阅，防止内存泄漏
+        Disposable msgSub = messageSubscription.getAndSet(null);
+        if (msgSub != null && !msgSub.isDisposed()) {
+            msgSub.dispose();
+            log.debug("Disposed message subscription");
+        }
+
+        Disposable stateSub = stateSubscription.getAndSet(null);
+        if (stateSub != null && !stateSub.isDisposed()) {
+            stateSub.dispose();
+            log.debug("Disposed state subscription");
+        }
+
+        connectionManager.disconnectAll().subscribe(
+            v -> log.debug("FlowClient closed successfully"),
+            error -> log.error("Error closing FlowClient", error)
+        );
     }
 
     // ============================================================================
@@ -245,17 +267,34 @@ public class FlowClient {
                         .thenReturn(connection))
                 // 订阅连接状态变化
                 .doOnNext(connection -> {
-                    connection.connectionStates()
-                            .subscribe(this::handleConnectionStateChange);
+                    // 清理旧订阅
+                    Disposable oldStateSub = stateSubscription.getAndSet(
+                        connection.connectionStates()
+                            .subscribe(
+                                this::handleConnectionStateChange,
+                                error -> log.error("Connection state stream error", error)
+                            )
+                    );
+                    if (oldStateSub != null && !oldStateSub.isDisposed()) {
+                        oldStateSub.dispose();
+                    }
                 })
                 // 订阅消息流
                 .flatMap(connection -> {
-                    // 启动消息处理
-                    connection.messages()
+                    // 清理旧订阅
+                    Disposable oldMsgSub = messageSubscription.getAndSet(
+                        connection.messages()
                             .subscribe(
-                                    this::handleMessage,
-                                    error -> log.error("Message stream error", error)
-                            );
+                                this::handleMessage,
+                                error -> {
+                                    log.error("Message stream error", error);
+                                    globalErrorHandler.accept(error);
+                                }
+                            )
+                    );
+                    if (oldMsgSub != null && !oldMsgSub.isDisposed()) {
+                        oldMsgSub.dispose();
+                    }
 
                     // 发送启动请求
                     FlowConfig flowConfig = FlowConfig.builder()

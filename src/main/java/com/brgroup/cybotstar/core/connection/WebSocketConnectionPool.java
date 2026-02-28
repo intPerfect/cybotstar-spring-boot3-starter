@@ -69,19 +69,21 @@ public class WebSocketConnectionPool {
     }
 
     /**
-     * 初始化最小连接数
+     * 初始化最小连接数（异步）
      */
     private void initializeMinConnections() {
         for (int i = 0; i < minPoolSize; i++) {
-            try {
-                WebSocketConnection connection = createConnection();
-                availableConnections.offer(connection);
-                totalConnections.incrementAndGet();
-            } catch (Exception e) {
-                log.warn("Failed to initialize connection #{}", i, e);
-            }
+            int index = i;
+            createConnectionAsync()
+                .subscribe(
+                    connection -> {
+                        availableConnections.offer(connection);
+                        totalConnections.incrementAndGet();
+                        log.debug("Initialized connection #{}", index);
+                    },
+                    error -> log.warn("Failed to initialize connection #{}", index, error)
+                );
         }
-        log.debug("Initialized {} connections", totalConnections.get());
     }
 
     /**
@@ -89,7 +91,7 @@ public class WebSocketConnectionPool {
      */
     @NonNull
     public Mono<WebSocketConnection> acquire() {
-        return Mono.fromCallable(() -> {
+        return Mono.defer(() -> {
             // 尝试从池中获取可用连接
             WebSocketConnection connection = availableConnections.poll();
 
@@ -99,7 +101,7 @@ public class WebSocketConnectionPool {
                     activeConnections.incrementAndGet();
                     log.debug("Acquired connection from pool (active: {}, total: {})",
                             activeConnections.get(), totalConnections.get());
-                    return connection;
+                    return Mono.just(connection);
                 } else {
                     // 连接已失效，关闭并创建新连接
                     connection.close();
@@ -109,19 +111,22 @@ public class WebSocketConnectionPool {
 
             // 如果池中没有可用连接且未达到最大连接数，创建新连接
             if (totalConnections.get() < maxPoolSize) {
-                connection = createConnection();
-                totalConnections.incrementAndGet();
-                activeConnections.incrementAndGet();
-                log.debug("Created new connection (active: {}, total: {})",
-                        activeConnections.get(), totalConnections.get());
-                return connection;
+                return createConnectionAsync()
+                    .doOnSuccess(conn -> {
+                        totalConnections.incrementAndGet();
+                        activeConnections.incrementAndGet();
+                        log.debug("Created new connection (active: {}, total: {})",
+                                activeConnections.get(), totalConnections.get());
+                    });
             }
 
-            // 达到最大连接数，等待可用连接
+            // 达到最大连接数，等待可用连接（使用响应式方式）
             log.debug("Pool exhausted, waiting for available connection...");
-            connection = availableConnections.take();  // 阻塞等待
-            activeConnections.incrementAndGet();
-            return connection;
+            return Mono.fromCallable(() -> {
+                WebSocketConnection conn = availableConnections.take();  // 阻塞等待
+                activeConnections.incrementAndGet();
+                return conn;
+            });
         });
     }
 
@@ -156,14 +161,13 @@ public class WebSocketConnectionPool {
     }
 
     /**
-     * 创建新连接
+     * 创建新连接（异步）
      */
     @NonNull
-    private WebSocketConnection createConnection() {
+    private Mono<WebSocketConnection> createConnectionAsync() {
         WebSocketConnection connection = new WebSocketConnection(config);
-        // 同步连接（阻塞）
-        connection.connect().block();
-        return connection;
+        return connection.connect()
+            .thenReturn(connection);
     }
 
     /**
