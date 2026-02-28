@@ -24,6 +24,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
@@ -62,6 +63,7 @@ public class AgentClient implements DisposableBean {
     private volatile Consumer<Object> rawResponseCallback;
 
     public AgentClient(@NonNull AgentConfig config) {
+        Objects.requireNonNull(config, "config cannot be null");
         CybotStarUtils.validateConfig(config);
         this.config = config;
         this.connectionManager = new ConnectionManager(config);
@@ -75,18 +77,21 @@ public class AgentClient implements DisposableBean {
 
     @NonNull
     public AgentClient prompt(@NonNull String question) {
+        Objects.requireNonNull(question, "question cannot be null");
         requestBuilderHolder.get().prompt(question);
         return this;
     }
 
     @NonNull
     public AgentClient option(@NonNull ModelOptions modelOptions) {
+        Objects.requireNonNull(modelOptions, "modelOptions cannot be null");
         requestBuilderHolder.get().option(modelOptions);
         return this;
     }
 
     @NonNull
     public AgentClient session(@NonNull String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId cannot be null");
         this.threadLocalSessionId.set(sessionId);
         this.defaultSessionId = sessionId;
         requestBuilderHolder.get().session(sessionId);
@@ -95,10 +100,30 @@ public class AgentClient implements DisposableBean {
 
     @NonNull
     public AgentClient messages(@NonNull List<MessageParam> messages) {
+        Objects.requireNonNull(messages, "messages cannot be null");
         if (messages.isEmpty()) {
             throw new IllegalArgumentException("messages 不能为空");
         }
         requestBuilderHolder.get().setMessageParams(messages);
+        return this;
+    }
+
+    /**
+     * 设置请求超时时间
+     */
+    @NonNull
+    public AgentClient timeout(@NonNull Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout cannot be null");
+        requestBuilderHolder.get().timeout(timeout);
+        return this;
+    }
+
+    /**
+     * 设置请求超时时间（毫秒）
+     */
+    @NonNull
+    public AgentClient timeout(long timeoutMillis) {
+        requestBuilderHolder.get().timeout(timeoutMillis);
         return this;
     }
 
@@ -108,18 +133,21 @@ public class AgentClient implements DisposableBean {
 
     @NonNull
     public AgentClient onReasoning(@NonNull Consumer<String> callback) {
+        Objects.requireNonNull(callback, "callback cannot be null");
         this.reasoningCallback = callback;
         return this;
     }
 
     @NonNull
     public AgentClient onRawRequest(@NonNull Consumer<WSPayload> callback) {
+        Objects.requireNonNull(callback, "callback cannot be null");
         this.rawRequestCallback = callback;
         return this;
     }
 
     @NonNull
     public AgentClient onRawResponse(@NonNull Consumer<Object> callback) {
+        Objects.requireNonNull(callback, "callback cannot be null");
         this.rawResponseCallback = callback;
         return this;
     }
@@ -147,38 +175,40 @@ public class AgentClient implements DisposableBean {
         final String sessionId = requestConfig.sessionId();
         final String question = requestConfig.question();
         ExtendedSendOptions options = requestConfig.options();
+        Duration requestTimeout = requestConfig.timeout();
 
-        // 合并选项
-        ExtendedSendOptions mergedOptions = mergeOptions(sessionId, options);
-
-        // 获取超时时间
-        long timeout = config.getWebsocket().getTimeout() != null
-                ? config.getWebsocket().getTimeout()
-                : CybotStarConstants.DEFAULT_RESPONSE_TIMEOUT;
+        // 获取超时时间（优先使用请求级超时，否则使用配置的默认超时）
+        long timeout = requestTimeout != null
+                ? requestTimeout.toMillis()
+                : (config.getWebsocket().getTimeout() != null
+                        ? config.getWebsocket().getTimeout()
+                        : CybotStarConstants.DEFAULT_RESPONSE_TIMEOUT);
 
         // 保存回调引用
         final Consumer<String> reasoningCb = this.reasoningCallback;
         final Consumer<WSPayload> rawRequestCb = this.rawRequestCallback;
         final Consumer<Object> rawResponseCb = this.rawResponseCallback;
 
-        return sessionManager.getContext(sessionId)
-                // 确保连接已建立
-                .flatMap(context -> context.getConnection().ensureConnected()
-                        .thenReturn(context))
-                // 发送请求
-                .flatMap(context -> {
-                    WSPayload payload = PayloadBuilder.buildPayload(config, question, sessionId, mergedOptions);
+        // 响应式合并选项并发送请求
+        return mergeOptionsReactive(sessionId, options)
+                .flatMapMany(mergedOptions -> sessionManager.getContext(sessionId)
+                        // 确保连接已建立
+                        .flatMap(context -> context.getConnection().ensureConnected()
+                                .thenReturn(context))
+                        // 发送请求
+                        .flatMap(context -> {
+                            WSPayload payload = PayloadBuilder.buildPayload(config, question, sessionId, mergedOptions);
 
-                    // 触发原始请求回调
-                    if (rawRequestCb != null) {
-                        rawRequestCb.accept(payload);
-                    }
+                            // 触发原始请求回调
+                            if (rawRequestCb != null) {
+                                rawRequestCb.accept(payload);
+                            }
 
-                    return context.getConnection().send(payload)
-                            .thenReturn(context);
-                })
-                // 获取事件流并处理
-                .flatMapMany(context -> {
+                            return context.getConnection().send(payload)
+                                    .thenReturn(context);
+                        })
+                        // 获取事件流并处理
+                        .flatMapMany(context -> {
                     // 累积完整文本用于保存历史
                     final StringBuilder fullTextBuilder = new StringBuilder();
                     final String finalQuestion = question;
@@ -222,7 +252,8 @@ public class AgentClient implements DisposableBean {
                                             .build()).subscribe();
                                 }
                             });
-                })
+                        })
+                )
                 // 错误处理
                 .onErrorResume(error -> {
                     log.error("Stream error, sessionId: {}", sessionId, error);
@@ -260,10 +291,10 @@ public class AgentClient implements DisposableBean {
     }
 
     /**
-     * 合并选项
+     * 合并选项（响应式版本）
      */
     @NonNull
-    private ExtendedSendOptions mergeOptions(@NonNull String sessionId, @Nullable ExtendedSendOptions options) {
+    private Mono<ExtendedSendOptions> mergeOptionsReactive(@NonNull String sessionId, @Nullable ExtendedSendOptions options) {
         final ExtendedSendOptions finalOptions = options != null ? options : new ExtendedSendOptions();
 
         // 获取会话上下文的历史消息
@@ -285,15 +316,26 @@ public class AgentClient implements DisposableBean {
                         finalOptions.setMessageParams(finalParams);
                     }
                     return finalOptions;
-                })
-                .block();  // 这里使用 block() 是安全的，因为只是读取缓存的数据
+                });
+    }
+
+    /**
+     * 获取会话上下文（响应式方法，推荐使用）
+     */
+    @NonNull
+    public Mono<SessionContext> getSessionContextReactive(@NonNull String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId cannot be null");
+        return sessionManager.getContext(sessionId);
     }
 
     /**
      * 获取会话上下文（同步方法，用于兼容旧 API）
+     * @deprecated 推荐使用 {@link #getSessionContextReactive(String)} 以避免阻塞
      */
+    @Deprecated
     @NonNull
     public SessionContext getSessionContext(@NonNull String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId cannot be null");
         return sessionManager.getContext(sessionId).block();
     }
 
@@ -301,6 +343,7 @@ public class AgentClient implements DisposableBean {
      * 断开连接
      */
     public void disconnect(@NonNull String sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId cannot be null");
         sessionManager.removeContext(sessionId).subscribe();
     }
 

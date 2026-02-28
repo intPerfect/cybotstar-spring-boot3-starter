@@ -41,6 +41,7 @@
         <commons-codec.version>1.19.0</commons-codec.version>
         <java-websocket.version>1.5.7</java-websocket.version>
         <guava.version>33.5.0-jre</guava.version>
+        <caffeine.version>3.1.8</caffeine.version>
         <lanterna.version>3.1.1</lanterna.version>
     </properties>
 
@@ -116,6 +117,13 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
+        </dependency>
+
+        <!-- Caffeine Cache -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
         </dependency>
 
         <!-- Logging -->

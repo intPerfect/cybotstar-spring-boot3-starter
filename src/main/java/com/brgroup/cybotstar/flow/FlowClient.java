@@ -32,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * 响应式 Flow 运行时引擎
@@ -61,6 +62,9 @@ public class FlowClient {
 
     // 完成信号 Sink
     private final Sinks.One<Void> completionSink = Sinks.one();
+
+    // 全局错误处理器
+    private volatile Consumer<Throwable> globalErrorHandler = e -> log.error("Unhandled error in FlowClient", e);
 
     public FlowClient(@NonNull FlowConfig config) {
         this.config = config;
@@ -123,6 +127,19 @@ public class FlowClient {
     // 跳转事件
     public void onJump(FlowHandler<FlowJumpVO> handler) { typedHandlerMap.put(FlowEventType.JUMP, handler); }
     public void onJumpData(FlowHandler<FlowData> handler) { typedHandlerMap.put(FlowEventType.JUMP, handler); }
+
+    /**
+     * 设置全局错误处理器
+     * 当事件处理器抛出异常时，会调用此处理器
+     *
+     * @param errorHandler 错误处理器
+     * @return FlowClient 实例（支持链式调用）
+     */
+    @NonNull
+    public FlowClient onHandlerError(@NonNull Consumer<Throwable> errorHandler) {
+        this.globalErrorHandler = errorHandler;
+        return this;
+    }
 
     // 原始数据事件
     public void onRawResponse(FlowHandler<WSResponse> handler) { typedHandlerMap.put(FlowEventType.RAW_RESPONSE, handler); }
@@ -595,8 +612,19 @@ public class FlowClient {
     private void emit(@NonNull FlowEventType event, Object... args) {
         Object handler = typedHandlerMap.get(event);
         if (handler != null) {
-            try { invokeTypedHandler(event, handler, args); }
-            catch (Exception e) { log.error("Error in typed {} handler", event, e); }
+            try {
+                invokeTypedHandler(event, handler, args);
+            } catch (Exception e) {
+                log.error("Error in typed {} handler", event, e);
+                // 调用全局错误处理器
+                if (globalErrorHandler != null) {
+                    try {
+                        globalErrorHandler.accept(e);
+                    } catch (Exception handlerError) {
+                        log.error("Error in global error handler", handlerError);
+                    }
+                }
+            }
         }
     }
 

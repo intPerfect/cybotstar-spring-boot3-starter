@@ -14,23 +14,29 @@ import java.util.concurrent.ConcurrentHashMap;
  * Flow 事件处理器容器
  * <p>
  * 统一管理所有 Flow 事件处理器，提供类型安全的注册和触发机制。
- * 支持简化版（字符串消息）和完整版（VO 对象）两种处理方式。
+ * 支持简化版（MessageHandler）和完整版（FlowHandler）两种处理方式。
  * <p>
  * 使用示例：
  * <pre>
  * FlowHandlers handlers = new FlowHandlers();
  *
- * // 注册消息处理器（简化版）
- * handlers.onMessage(msg -&gt; System.out.println(msg.getText()));
+ * // 注册消息处理器（简化版，双参数）
+ * handlers.onMessage((msg, isFinished) -&gt; {
+ *     if (isFinished) {
+ *         System.out.println("消息结束");
+ *     } else {
+ *         System.out.println(msg);
+ *     }
+ * });
  *
- * // 注册消息处理器（VO 版）
+ * // 注册消息处理器（VO 版，单参数）
  * handlers.onMessageVO(vo -&gt; System.out.println(vo.getDisplayText()));
  *
- * // 注册启动处理器
+ * // 注册启动处理器（原始数据）
  * handlers.onStart(data -&gt; System.out.println("Flow started"));
  *
- * // 触发事件
- * handlers.trigger(FlowEventType.MESSAGE, messageVO);
+ * // 注册启动处理器（VO 版）
+ * handlers.onStartVO(vo -&gt; System.out.println("Started: " + vo.getFlowName()));
  * </pre>
  *
  * @author zhiyuan.xi

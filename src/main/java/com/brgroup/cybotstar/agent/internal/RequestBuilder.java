@@ -8,6 +8,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +25,8 @@ public class RequestBuilder {
     private ExtendedSendOptions requestOptions;
     @Nullable
     private String requestSessionId;
+    @Nullable
+    private Duration requestTimeout;  // 请求级超时时间
 
     /**
      * 设置用户问题
@@ -62,6 +65,24 @@ public class RequestBuilder {
     @NonNull
     public RequestBuilder session(@NonNull String sessionId) {
         this.requestSessionId = sessionId;
+        return this;
+    }
+
+    /**
+     * 设置请求超时时间
+     */
+    @NonNull
+    public RequestBuilder timeout(@NonNull Duration timeout) {
+        this.requestTimeout = timeout;
+        return this;
+    }
+
+    /**
+     * 设置请求超时时间（毫秒）
+     */
+    @NonNull
+    public RequestBuilder timeout(long timeoutMillis) {
+        this.requestTimeout = Duration.ofMillis(timeoutMillis);
         return this;
     }
 
@@ -108,7 +129,8 @@ public class RequestBuilder {
         return new RequestConfig(
                 requestQuestion,
                 requestSessionId != null ? requestSessionId : defaultSessionId,
-                requestOptions);
+                requestOptions,
+                requestTimeout);
     }
 
     /**
@@ -118,6 +140,7 @@ public class RequestBuilder {
         requestQuestion = null;
         requestOptions = null;
         requestSessionId = null;
+        requestTimeout = null;
     }
 
     /**
@@ -157,6 +180,7 @@ public class RequestBuilder {
      * 请求配置
      */
     public record RequestConfig(@NonNull String question, @NonNull String sessionId,
-                                @Nullable ExtendedSendOptions options) {
+                                @Nullable ExtendedSendOptions options,
+                                @Nullable Duration timeout) {
     }
 }

@@ -21,6 +21,7 @@ import reactor.core.scheduler.Schedulers;
 import java.net.URI;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -54,6 +55,9 @@ public class WebSocketConnection implements AutoCloseable {
 
     // 是否已关闭
     private final AtomicBoolean closed = new AtomicBoolean(false);
+
+    // 重连尝试次数
+    private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
 
     // 心跳流（用于取消订阅）
     private final AtomicReference<reactor.core.Disposable> heartbeatDisposable =
@@ -362,22 +366,35 @@ public class WebSocketConnection implements AutoCloseable {
     }
 
     /**
-     * 安排重连
+     * 安排重连（使用指数退避策略）
      */
     private void scheduleReconnect() {
-        Long retryInterval = config.getWebsocket().getRetryInterval();
-        if (retryInterval == null) {
-            retryInterval = CybotStarConstants.DEFAULT_RETRY_INTERVAL;
+        int attempts = reconnectAttempts.incrementAndGet();
+
+        Long baseRetryInterval = config.getWebsocket().getRetryInterval();
+        if (baseRetryInterval == null) {
+            baseRetryInterval = CybotStarConstants.DEFAULT_RETRY_INTERVAL;
         }
 
+        // 指数退避：delay = min(baseInterval * 2^attempts, maxInterval)
+        long maxRetryInterval = CybotStarConstants.MAX_RETRY_BACKOFF;
+        long delay = Math.min(
+                baseRetryInterval * (long) Math.pow(2, Math.min(attempts - 1, 5)),
+                maxRetryInterval
+        );
+
+        log.debug("Scheduling reconnect attempt #{} after {}ms", attempts, delay);
         setState(ConnectionState.RECONNECTING);
 
-        Mono.delay(Duration.ofMillis(retryInterval))
+        Mono.delay(Duration.ofMillis(delay))
                 .then(connect())
                 .subscribe(
-                        v -> log.info("Reconnection successful"),
+                        v -> {
+                            log.info("Reconnection successful after {} attempts", attempts);
+                            reconnectAttempts.set(0);  // 重置重连计数
+                        },
                         error -> {
-                            log.warn("Reconnection failed", error);
+                            log.warn("Reconnection attempt #{} failed", attempts, error);
                             if (!closed.get()) {
                                 scheduleReconnect();
                             }

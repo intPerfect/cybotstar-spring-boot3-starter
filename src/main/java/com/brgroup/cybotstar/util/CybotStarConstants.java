@@ -58,6 +58,73 @@ public final class CybotStarConstants {
      */
     public static final int DEFAULT_MAX_RETRIES = 3;
 
+    /**
+     * 最大重连退避时间（毫秒）
+     */
+    public static final long MAX_RETRY_BACKOFF = 30000;
+
+    // ============================================================================
+    // 消息角色相关
+    // ============================================================================
+
+    /**
+     * 用户消息角色
+     */
+    public static final String ROLE_USER = "user";
+
+    /**
+     * 助手消息角色
+     */
+    public static final String ROLE_ASSISTANT = "assistant";
+
+    /**
+     * 系统消息角色
+     */
+    public static final String ROLE_SYSTEM = "system";
+
+    // ============================================================================
+    // 字段名称常量
+    // ============================================================================
+
+    /**
+     * 数据字段名
+     */
+    public static final String FIELD_DATA = "data";
+
+    /**
+     * 消息字段名
+     */
+    public static final String FIELD_MESSAGE = "message";
+
+    /**
+     * 代码字段名
+     */
+    public static final String FIELD_CODE = "code";
+
+    /**
+     * 类型字段名
+     */
+    public static final String FIELD_TYPE = "type";
+
+    /**
+     * 内容字段名
+     */
+    public static final String FIELD_CONTENT = "content";
+
+    // ============================================================================
+    // 缓存相关
+    // ============================================================================
+
+    /**
+     * 连接缓存最大容量
+     */
+    public static final int CONNECTION_CACHE_MAX_SIZE = 1000;
+
+    /**
+     * 连接缓存过期时间（分钟）
+     */
+    public static final int CONNECTION_CACHE_EXPIRE_MINUTES = 30;
+
     // ============================================================================
     // 流式输出相关
     // ============================================================================
