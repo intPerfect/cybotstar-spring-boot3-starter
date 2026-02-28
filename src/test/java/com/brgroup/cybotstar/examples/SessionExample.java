@@ -137,7 +137,7 @@ public class SessionExample {
         private void step2ConversationMemory(StreamRenderer renderer) {
             ColorPrinter.separator('-', 60);
             ColorPrinter.info("[案例1 - 步骤2] 测试对话记忆");
-            String memoryQuestion = "币种第一的余额是多少？";
+            String memoryQuestion = "哪个货币的余额是第一？";
             ColorPrinter.question("Question: " + memoryQuestion);
 
             renderer.start();
