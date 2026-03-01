@@ -147,4 +147,33 @@ public final class CybotStarConstants {
      * 会话示例延迟时间（毫秒）
      */
     public static final long SESSION_EXAMPLE_DELAY = 1000;
+
+    // ============================================================================
+    // 安全限制相关
+    // ============================================================================
+
+    /**
+     * 单条消息最大长度（字节）- 10MB
+     */
+    public static final int MAX_MESSAGE_LENGTH = 10 * 1024 * 1024;
+
+    /**
+     * 问题文本最大长度（字符）
+     */
+    public static final int MAX_QUESTION_LENGTH = 50000;
+
+    /**
+     * 最大会话数量限制
+     */
+    public static final int MAX_SESSION_COUNT = 1000;
+
+    /**
+     * 最大历史消息数量
+     */
+    public static final int MAX_HISTORY_SIZE = 100;
+
+    /**
+     * 最大重连次数限制
+     */
+    public static final int MAX_RECONNECT_ATTEMPTS = 10;
 }

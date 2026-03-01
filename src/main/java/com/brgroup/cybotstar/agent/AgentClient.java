@@ -78,6 +78,11 @@ public class AgentClient implements DisposableBean {
     @NonNull
     public AgentClient prompt(@NonNull String question) {
         Objects.requireNonNull(question, "question cannot be null");
+        if (question.length() > CybotStarConstants.MAX_QUESTION_LENGTH) {
+            throw new IllegalArgumentException(
+                String.format("问题长度超过限制: %d > %d",
+                    question.length(), CybotStarConstants.MAX_QUESTION_LENGTH));
+        }
         requestBuilderHolder.get().prompt(question);
         return this;
     }
@@ -165,12 +170,16 @@ public class AgentClient implements DisposableBean {
         // 构建请求配置
         RequestBuilder requestBuilder = requestBuilderHolder.get();
         String effectiveSessionId = getEffectiveSessionId();
-        RequestBuilder.RequestConfig requestConfig = requestBuilder.buildRequestConfig(effectiveSessionId);
-        requestBuilder.reset();
+        RequestBuilder.RequestConfig requestConfig;
 
-        // 清理 ThreadLocal
-        requestBuilderHolder.remove();
-        threadLocalSessionId.remove();
+        try {
+            requestConfig = requestBuilder.buildRequestConfig(effectiveSessionId);
+            requestBuilder.reset();
+        } finally {
+            // 确保 ThreadLocal 总是被清理，防止内存泄露
+            requestBuilderHolder.remove();
+            threadLocalSessionId.remove();
+        }
 
         final String sessionId = requestConfig.sessionId();
         final String question = requestConfig.question();
@@ -341,12 +350,17 @@ public class AgentClient implements DisposableBean {
     /**
      * 获取会话上下文（同步方法，用于兼容旧 API）
      * @deprecated 推荐使用 {@link #getSessionContextReactive(String)} 以避免阻塞
+     * 警告：此方法会阻塞当前线程，不应在响应式流中使用
      */
     @Deprecated
     @NonNull
     public SessionContext getSessionContext(@NonNull String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId cannot be null");
-        return sessionManager.getContext(sessionId).block();
+        SessionContext context = sessionManager.getContext(sessionId).block();
+        if (context == null) {
+            throw new IllegalStateException("Failed to get session context for: " + sessionId);
+        }
+        return context;
     }
 
     /**

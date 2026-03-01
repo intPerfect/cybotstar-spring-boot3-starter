@@ -4,6 +4,7 @@ import com.brgroup.cybotstar.agent.model.request.MessageParam;
 import com.brgroup.cybotstar.core.connection.WebSocketConnection;
 import com.brgroup.cybotstar.agent.handler.ReactiveMessageHandler;
 import com.brgroup.cybotstar.core.model.ws.WSResponse;
+import com.brgroup.cybotstar.core.util.CybotStarConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Flux;
@@ -108,6 +109,17 @@ public class SessionContext {
             historyRef.updateAndGet(list -> {
                 List<MessageParam> newList = new ArrayList<>(list);
                 newList.add(message);
+
+                // 限制历史消息数量，防止内存溢出
+                if (newList.size() > CybotStarConstants.MAX_HISTORY_SIZE) {
+                    // 保留最新的消息，移除最旧的
+                    newList = new ArrayList<>(newList.subList(
+                        newList.size() - CybotStarConstants.MAX_HISTORY_SIZE,
+                        newList.size()
+                    ));
+                    log.debug("History size exceeded limit, trimmed to {}", CybotStarConstants.MAX_HISTORY_SIZE);
+                }
+
                 return newList;
             });
             log.debug("Added history message, sessionId: {}, role: {}", sessionId, message.getRole());
@@ -123,6 +135,16 @@ public class SessionContext {
             historyRef.updateAndGet(list -> {
                 List<MessageParam> newList = new ArrayList<>(list);
                 newList.addAll(messages);
+
+                // 限制历史消息数量，防止内存溢出
+                if (newList.size() > CybotStarConstants.MAX_HISTORY_SIZE) {
+                    newList = new ArrayList<>(newList.subList(
+                        newList.size() - CybotStarConstants.MAX_HISTORY_SIZE,
+                        newList.size()
+                    ));
+                    log.debug("History size exceeded limit, trimmed to {}", CybotStarConstants.MAX_HISTORY_SIZE);
+                }
+
                 return newList;
             });
             log.debug("Added {} history messages, sessionId: {}", messages.size(), sessionId);

@@ -49,16 +49,38 @@ public final class CybotStarUtils {
             throw AgentException.invalidConfig("url", "URL 必须以 ws:// 或 wss:// 开头");
         }
 
-        if (StringUtils.isBlank(config.getCredentials().getRobotKey())) {
+        // 验证 URL 格式合法性
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            if (uri.getHost() == null || uri.getHost().isEmpty()) {
+                throw AgentException.invalidConfig("url", "URL 格式无效：缺少主机名");
+            }
+        } catch (IllegalArgumentException e) {
+            throw AgentException.invalidConfig("url", "URL 格式无效: " + e.getMessage());
+        }
+
+        String robotKey = config.getCredentials().getRobotKey();
+        if (StringUtils.isBlank(robotKey)) {
             throw AgentException.invalidConfig("robotKey", "机器人 Key 不能为空");
         }
-
-        if (StringUtils.isBlank(config.getCredentials().getRobotToken())) {
-            throw AgentException.invalidConfig("robotToken", "机器人 Token 不能为空");
+        if (robotKey.length() < 8 || robotKey.length() > 256) {
+            throw AgentException.invalidConfig("robotKey", "机器人 Key 长度必须在 8-256 之间");
         }
 
-        if (StringUtils.isBlank(config.getCredentials().getUsername())) {
+        String robotToken = config.getCredentials().getRobotToken();
+        if (StringUtils.isBlank(robotToken)) {
+            throw AgentException.invalidConfig("robotToken", "机器人 Token 不能为空");
+        }
+        if (robotToken.length() < 8 || robotToken.length() > 256) {
+            throw AgentException.invalidConfig("robotToken", "机器人 Token 长度必须在 8-256 之间");
+        }
+
+        String username = config.getCredentials().getUsername();
+        if (StringUtils.isBlank(username)) {
             throw AgentException.invalidConfig("username", "用户名不能为空");
+        }
+        if (username.length() > 128) {
+            throw AgentException.invalidConfig("username", "用户名长度不能超过 128");
         }
     }
 

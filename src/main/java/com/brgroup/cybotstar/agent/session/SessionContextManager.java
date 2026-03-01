@@ -1,6 +1,7 @@
 package com.brgroup.cybotstar.agent.session;
 
 import com.brgroup.cybotstar.core.connection.ConnectionManager;
+import com.brgroup.cybotstar.core.model.common.ConnectionState;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Mono;
@@ -31,7 +32,7 @@ public class SessionContextManager {
     /**
      * 获取或创建会话上下文
      * 使用 Mono.cache() 实现会话复用，失败时自动清除缓存
-     * 缓存有效期为 30 分钟，避免失败连接永久缓存
+     * 根据连接状态动态调整缓存时间
      *
      * @param sessionId 会话 ID
      * @return 会话上下文的 Mono
@@ -42,7 +43,15 @@ public class SessionContextManager {
             log.debug("Creating new session context for: {}", id);
             return createContext(id)
                     .cache(
-                        value -> Duration.ofMinutes(30),  // 成功时缓存 30 分钟
+                        value -> {
+                            // 根据连接状态决定缓存时间
+                            ConnectionState state = value.getConnection().getCurrentState();
+                            if (state == ConnectionState.CONNECTED) {
+                                return Duration.ofMinutes(30);  // 连接正常，缓存 30 分钟
+                            } else {
+                                return Duration.ofMinutes(5);   // 连接异常，缓存 5 分钟
+                            }
+                        },
                         error -> Duration.ZERO,            // 失败时不缓存
                         () -> Duration.ZERO                // 空值不缓存
                     );
@@ -97,5 +106,38 @@ public class SessionContextManager {
      */
     public boolean hasContext(@NonNull String sessionId) {
         return contextCache.containsKey(sessionId);
+    }
+
+    /**
+     * 获取会话数量
+     */
+    public int getSessionCount() {
+        return contextCache.size();
+    }
+
+    /**
+     * 清理无效会话
+     * 移除连接已关闭的会话
+     */
+    @NonNull
+    public Mono<Integer> cleanupInvalidSessions() {
+        return reactor.core.publisher.Flux.fromIterable(contextCache.entrySet())
+                .filterWhen(entry -> entry.getValue()
+                        .map(context -> {
+                            ConnectionState state = context.getConnection().getCurrentState();
+                            return state == ConnectionState.CLOSED || state == ConnectionState.DISCONNECTED;
+                        })
+                        .onErrorReturn(false))
+                .flatMap(entry -> {
+                    String sessionId = entry.getKey();
+                    log.debug("Cleaning up invalid session: {}", sessionId);
+                    return removeContext(sessionId).thenReturn(1);
+                })
+                .reduce(0, Integer::sum)
+                .doOnSuccess(count -> {
+                    if (count > 0) {
+                        log.info("Cleaned up {} invalid sessions", count);
+                    }
+                });
     }
 }

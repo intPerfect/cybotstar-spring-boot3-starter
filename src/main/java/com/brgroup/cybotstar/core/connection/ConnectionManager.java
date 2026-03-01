@@ -1,6 +1,7 @@
 package com.brgroup.cybotstar.core.connection;
 
 import com.brgroup.cybotstar.agent.config.AgentConfig;
+import com.brgroup.cybotstar.core.exception.ErrorRecoveryStrategy;
 import com.brgroup.cybotstar.core.util.CybotStarConstants;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -12,6 +13,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 响应式连接管理器
@@ -28,6 +30,9 @@ public class ConnectionManager {
     // 连接缓存（使用 Caffeine 实现自动淘汰）
     private final Cache<String, Mono<WebSocketConnection>> connectionCache;
 
+    // 连接计数器（用于监控）
+    private final AtomicInteger activeConnectionCount = new AtomicInteger(0);
+
     public ConnectionManager(@NonNull AgentConfig config) {
         Objects.requireNonNull(config, "config cannot be null");
         this.config = config;
@@ -37,6 +42,7 @@ public class ConnectionManager {
                 .maximumSize(CybotStarConstants.CONNECTION_CACHE_MAX_SIZE)
                 .expireAfterAccess(Duration.ofMinutes(CybotStarConstants.CONNECTION_CACHE_EXPIRE_MINUTES))
                 .removalListener(this::onConnectionRemoved)
+                .recordStats()  // 启用统计
                 .build();
 
         log.debug("ConnectionManager initialized with Caffeine cache (max: {}, TTL: {}min)",
@@ -59,10 +65,17 @@ public class ConnectionManager {
                 .doOnNext(connection -> {
                     try {
                         connection.close();
-                        log.debug("Connection closed for session: {}", sessionId);
+                        activeConnectionCount.decrementAndGet();
+                        log.debug("Connection closed for session: {}, active connections: {}",
+                            sessionId, activeConnectionCount.get());
                     } catch (Exception e) {
                         log.warn("Error closing connection for session: {}", sessionId, e);
                     }
+                })
+                .onErrorResume(error -> {
+                    log.warn("Failed to close connection for session: {}, error: {}",
+                        sessionId, error.getMessage());
+                    return Mono.empty();
                 })
                 .subscribe();
     }
@@ -78,13 +91,22 @@ public class ConnectionManager {
     public Mono<WebSocketConnection> getConnection(@NonNull String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId cannot be null");
 
+        // 检查会话数量限制
+        if (connectionCache.estimatedSize() >= CybotStarConstants.MAX_SESSION_COUNT) {
+            log.warn("Session count limit reached: {}", CybotStarConstants.MAX_SESSION_COUNT);
+            return Mono.error(new IllegalStateException(
+                "Maximum session count reached: " + CybotStarConstants.MAX_SESSION_COUNT));
+        }
+
         Mono<WebSocketConnection> cached = connectionCache.getIfPresent(sessionId);
         if (cached != null) {
             return cached;
         }
 
         // 创建新连接并缓存
-        Mono<WebSocketConnection> newConnection = createConnection(sessionId).cache();
+        Mono<WebSocketConnection> newConnection = createConnection(sessionId)
+                .retryWhen(ErrorRecoveryStrategy.connectionRetry())
+                .cache();
         connectionCache.put(sessionId, newConnection);
         return newConnection;
     }
@@ -100,11 +122,24 @@ public class ConnectionManager {
                         connection.connect()
                                 .thenReturn(connection)
                 )
-                .doOnSuccess(conn -> log.debug("Connection created successfully for session: {}", sessionId))
+                .doOnSuccess(conn -> {
+                    activeConnectionCount.incrementAndGet();
+                    log.debug("Connection created successfully for session: {}, active connections: {}",
+                        sessionId, activeConnectionCount.get());
+                })
                 .doOnError(error -> {
-                    log.error("Failed to create connection for session: {}", sessionId, error);
+                    log.error("Failed to create connection for session: {}, error: {}",
+                        sessionId, error.getMessage());
                     // 移除失败的连接缓存
                     connectionCache.invalidate(sessionId);
+                })
+                .onErrorMap(error -> {
+                    if (error instanceof com.brgroup.cybotstar.agent.exception.AgentException) {
+                        return error;
+                    }
+                    return com.brgroup.cybotstar.agent.exception.AgentException.connectionFailed(
+                        "Failed to create connection for session: " + sessionId,
+                        error instanceof Exception ? (Exception) error : null);
                 });
     }
 
@@ -157,10 +192,32 @@ public class ConnectionManager {
      * 获取缓存统计信息
      */
     public String getCacheStats() {
-        return String.format("Cache stats - size: %d, hits: %d, misses: %d, evictions: %d",
+        return String.format("Cache stats - size: %d, hits: %d, misses: %d, evictions: %d, active: %d",
                 connectionCache.estimatedSize(),
                 connectionCache.stats().hitCount(),
                 connectionCache.stats().missCount(),
-                connectionCache.stats().evictionCount());
+                connectionCache.stats().evictionCount(),
+                activeConnectionCount.get());
+    }
+
+    /**
+     * 获取活跃连接数
+     */
+    public int getActiveConnectionCount() {
+        return activeConnectionCount.get();
+    }
+
+    /**
+     * 获取缓存大小
+     */
+    public long getCacheSize() {
+        return connectionCache.estimatedSize();
+    }
+
+    /**
+     * 检查是否达到连接限制
+     */
+    public boolean isConnectionLimitReached() {
+        return connectionCache.estimatedSize() >= CybotStarConstants.MAX_SESSION_COUNT;
     }
 }

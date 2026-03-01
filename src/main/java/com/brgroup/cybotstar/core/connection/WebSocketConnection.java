@@ -371,6 +371,15 @@ public class WebSocketConnection implements AutoCloseable {
     private void scheduleReconnect() {
         int attempts = reconnectAttempts.incrementAndGet();
 
+        // 检查是否超过最大重连次数
+        if (attempts > CybotStarConstants.MAX_RECONNECT_ATTEMPTS) {
+            log.error("Max reconnect attempts ({}) exceeded, giving up", CybotStarConstants.MAX_RECONNECT_ATTEMPTS);
+            setState(ConnectionState.DISCONNECTED);
+            messageSink.tryEmitError(new IllegalStateException(
+                "WebSocket reconnection failed after " + CybotStarConstants.MAX_RECONNECT_ATTEMPTS + " attempts"));
+            return;
+        }
+
         Long baseRetryInterval = config.getWebsocket().getRetryInterval();
         if (baseRetryInterval == null) {
             baseRetryInterval = CybotStarConstants.DEFAULT_RETRY_INTERVAL;

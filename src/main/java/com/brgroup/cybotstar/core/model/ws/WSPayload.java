@@ -63,5 +63,41 @@ public class WSPayload {
 
     @JSONField(name = "model_params")
     private ModelOptions modelOptions;
+
+    /**
+     * 脱敏 toString 方法，防止凭证泄露到日志
+     */
+    @Override
+    public String toString() {
+        return "WSPayload{" +
+                "cybertronRobotKey='" + maskSensitive(cybertronRobotKey) + '\'' +
+                ", cybertronRobotToken='" + maskSensitive(cybertronRobotToken) + '\'' +
+                ", username='" + username + '\'' +
+                ", question='" + truncate(question, 50) + '\'' +
+                ", segmentCode='" + segmentCode + '\'' +
+                ", openFlowTrigger='" + openFlowTrigger + '\'' +
+                ", openFlowUuid='" + openFlowUuid + '\'' +
+                '}';
+    }
+
+    private static String maskSensitive(String value) {
+        if (value == null || value.isEmpty()) {
+            return "****";
+        }
+        if (value.length() <= 8) {
+            return "****";
+        }
+        return value.substring(0, 4) + "****" + value.substring(value.length() - 4);
+    }
+
+    private static String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "null";
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...";
+    }
 }
 

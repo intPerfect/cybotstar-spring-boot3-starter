@@ -225,6 +225,10 @@ public class FlowClient {
         abortReason.set(reason);
         FlowException error = FlowException.flowError(reason, null);
         completionSink.tryEmitError(error);
+
+        // 清理订阅
+        cleanupSubscriptions();
+
         connectionManager.disconnectAll().subscribe();
     }
 
@@ -232,6 +236,18 @@ public class FlowClient {
         flowState.set(FlowState.COMPLETED);
 
         // 清理订阅，防止内存泄漏
+        cleanupSubscriptions();
+
+        connectionManager.disconnectAll().subscribe(
+            v -> log.debug("FlowClient closed successfully"),
+            error -> log.error("Error closing FlowClient", error)
+        );
+    }
+
+    /**
+     * 清理所有订阅，防止内存泄漏
+     */
+    private void cleanupSubscriptions() {
         Disposable msgSub = messageSubscription.getAndSet(null);
         if (msgSub != null && !msgSub.isDisposed()) {
             msgSub.dispose();
@@ -243,11 +259,6 @@ public class FlowClient {
             stateSub.dispose();
             log.debug("Disposed state subscription");
         }
-
-        connectionManager.disconnectAll().subscribe(
-            v -> log.debug("FlowClient closed successfully"),
-            error -> log.error("Error closing FlowClient", error)
-        );
     }
 
     // ============================================================================
