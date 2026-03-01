@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -29,7 +30,8 @@ public class SessionContextManager {
 
     /**
      * 获取或创建会话上下文
-     * 使用 Mono.cache() 实现会话复用
+     * 使用 Mono.cache() 实现会话复用，失败时自动清除缓存
+     * 缓存有效期为 30 分钟，避免失败连接永久缓存
      *
      * @param sessionId 会话 ID
      * @return 会话上下文的 Mono
@@ -38,7 +40,12 @@ public class SessionContextManager {
     public Mono<SessionContext> getContext(@NonNull String sessionId) {
         return contextCache.computeIfAbsent(sessionId, id -> {
             log.debug("Creating new session context for: {}", id);
-            return createContext(id).cache();
+            return createContext(id)
+                    .cache(
+                        value -> Duration.ofMinutes(30),  // 成功时缓存 30 分钟
+                        error -> Duration.ZERO,            // 失败时不缓存
+                        () -> Duration.ZERO                // 空值不缓存
+                    );
         });
     }
 

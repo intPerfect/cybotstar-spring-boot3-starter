@@ -13,7 +13,7 @@ import com.brgroup.cybotstar.agent.handler.ReactiveMessageHandler;
 import com.brgroup.cybotstar.core.model.ws.WSPayload;
 import com.brgroup.cybotstar.core.util.CybotStarConstants;
 import com.brgroup.cybotstar.core.util.CybotStarUtils;
-import com.brgroup.cybotstar.agent.util.PayloadBuilder;
+import com.brgroup.cybotstar.core.util.payload.PayloadBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -190,7 +190,7 @@ public class AgentClient implements DisposableBean {
         final Consumer<Object> rawResponseCb = this.rawResponseCallback;
 
         // 响应式合并选项并发送请求
-        return mergeOptionsReactive(sessionId, options)
+        return mergeOptionsReactive(sessionId, options, question)
                 .flatMapMany(mergedOptions -> sessionManager.getContext(sessionId)
                         // 确保连接已建立
                         .flatMap(context -> context.getConnection().ensureConnected()
@@ -217,7 +217,10 @@ public class AgentClient implements DisposableBean {
                     if (rawResponseCb != null) {
                         context.messageStream()
                                 .doOnNext(rawResponseCb::accept)
-                                .subscribe();
+                                .subscribe(
+                                    v -> {}, // onNext handled by doOnNext
+                                    error -> log.error("Raw response callback error for session: {}", sessionId, error)
+                                );
                     }
 
                     // 使用事件流
@@ -238,20 +241,24 @@ public class AgentClient implements DisposableBean {
                             .doOnNext(fullTextBuilder::append)
                             // 超时处理
                             .timeout(Duration.ofMillis(timeout), Flux.empty())
-                            // 完成时保存历史
-                            .doOnComplete(() -> {
+                            // 完成时保存历史（使用 concatWith 确保历史保存完成后才结束流）
+                            .concatWith(Mono.defer(() -> {
                                 String fullText = fullTextBuilder.toString();
                                 if (!finalQuestion.isEmpty() && !fullText.isEmpty()) {
-                                    context.addHistory(MessageParam.builder()
+                                    // 先保存用户消息，再保存助手消息，确保顺序正确
+                                    return context.addHistory(MessageParam.builder()
                                             .role("user")
                                             .content(finalQuestion)
-                                            .build()).subscribe();
-                                    context.addHistory(MessageParam.builder()
-                                            .role("assistant")
-                                            .content(fullText)
-                                            .build()).subscribe();
+                                            .build())
+                                            .then(context.addHistory(MessageParam.builder()
+                                                    .role("assistant")
+                                                    .content(fullText)
+                                                    .build()))
+                                            .doOnError(error -> log.error("Failed to save history for session: {}", sessionId, error))
+                                            .then(Mono.empty());  // 返回空 Mono，不发送额外的元素
                                 }
-                            });
+                                return Mono.empty();
+                            }));
                         })
                 )
                 // 错误处理
@@ -294,7 +301,7 @@ public class AgentClient implements DisposableBean {
      * 合并选项（响应式版本）
      */
     @NonNull
-    private Mono<ExtendedSendOptions> mergeOptionsReactive(@NonNull String sessionId, @Nullable ExtendedSendOptions options) {
+    private Mono<ExtendedSendOptions> mergeOptionsReactive(@NonNull String sessionId, @Nullable ExtendedSendOptions options, @NonNull String currentQuestion) {
         final ExtendedSendOptions finalOptions = options != null ? options : new ExtendedSendOptions();
 
         // 获取会话上下文的历史消息
@@ -311,6 +318,9 @@ public class AgentClient implements DisposableBean {
                         // 再添加现有的 messageParams
                         if (existingParams != null && !existingParams.isEmpty()) {
                             finalParams.addAll(existingParams);
+                        } else {
+                            // 如果没有现有的messageParams，添加当前问题作为新的user消息
+                            finalParams.add(MessageParam.user(currentQuestion));
                         }
 
                         finalOptions.setMessageParams(finalParams);

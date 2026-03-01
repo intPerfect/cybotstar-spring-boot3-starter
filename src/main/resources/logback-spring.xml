@@ -23,7 +23,7 @@
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>
-    
+
     <!-- Flow 日志级别由代码动态设置，根据 yml 配置中的 cybotstar.flows.*.log.log-level -->
     <!-- 不再硬编码 DEBUG 级别，避免覆盖 yml 配置 -->
 </configuration>
