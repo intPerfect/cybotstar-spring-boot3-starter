@@ -1,10 +1,13 @@
 package com.brgroup.cybotstar.core.exception;
 
+import com.brgroup.cybotstar.agent.exception.AgentErrorCode;
+import com.brgroup.cybotstar.agent.exception.AgentException;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.function.Predicate;
 
@@ -22,18 +25,14 @@ public class ErrorRecoveryStrategy {
      */
     private static final Predicate<Throwable> RETRYABLE_ERROR = error -> {
         // 网络相关错误可重试
-        if (error instanceof java.net.ConnectException ||
-            error instanceof java.net.SocketTimeoutException ||
-            error instanceof java.io.IOException) {
+        if (error instanceof IOException) {
             return true;
         }
 
         // AgentException 中的连接相关错误可重试
-        if (error instanceof com.brgroup.cybotstar.agent.exception.AgentException) {
-            com.brgroup.cybotstar.agent.exception.AgentException agentEx =
-                (com.brgroup.cybotstar.agent.exception.AgentException) error;
-            return agentEx.getCode() == com.brgroup.cybotstar.agent.exception.AgentErrorCode.CONNECTION_FAILED ||
-                   agentEx.getCode() == com.brgroup.cybotstar.agent.exception.AgentErrorCode.CONNECTION_TIMEOUT;
+        if (error instanceof AgentException agentEx) {
+            return agentEx.getCode() == AgentErrorCode.CONNECTION_FAILED ||
+                    agentEx.getCode() == AgentErrorCode.CONNECTION_TIMEOUT;
         }
 
         return false;
@@ -53,9 +52,9 @@ public class ErrorRecoveryStrategy {
                 .maxBackoff(maxBackoff)
                 .filter(RETRYABLE_ERROR)
                 .doBeforeRetry(signal ->
-                    log.warn("Retrying operation, attempt: {}, error: {}",
-                        signal.totalRetries() + 1,
-                        signal.failure().getMessage()))
+                        log.warn("Retrying operation, attempt: {}, error: {}",
+                                signal.totalRetries() + 1,
+                                signal.failure().getMessage()))
                 .onRetryExhaustedThrow((spec, signal) -> {
                     log.error("Retry exhausted after {} attempts", signal.totalRetries());
                     return signal.failure();
@@ -118,12 +117,12 @@ public class ErrorRecoveryStrategy {
         // 配置错误是致命的
         if (error instanceof com.brgroup.cybotstar.agent.exception.AgentException) {
             com.brgroup.cybotstar.agent.exception.AgentException agentEx =
-                (com.brgroup.cybotstar.agent.exception.AgentException) error;
+                    (com.brgroup.cybotstar.agent.exception.AgentException) error;
             return agentEx.getCode() == com.brgroup.cybotstar.agent.exception.AgentErrorCode.INVALID_CONFIG;
         }
 
         // 参数错误是致命的
         return error instanceof IllegalArgumentException ||
-               error instanceof NullPointerException;
+                error instanceof NullPointerException;
     }
 }

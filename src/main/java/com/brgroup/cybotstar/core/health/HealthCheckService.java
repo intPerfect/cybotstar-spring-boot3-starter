@@ -74,7 +74,6 @@ public class HealthCheckService {
     /**
      * 快速健康检查（仅检查基本状态）
      */
-    @NonNull
     public boolean isHealthy() {
         try {
             return !connectionManager.isConnectionLimitReached();

@@ -20,6 +20,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.DisposableBean;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -136,11 +137,9 @@ public class AgentClient implements DisposableBean {
     // 事件回调（保留用于兼容性）
     // ============================================================================
 
-    @NonNull
-    public AgentClient onReasoning(@NonNull Consumer<String> callback) {
+    public void onReasoning(@NonNull Consumer<String> callback) {
         Objects.requireNonNull(callback, "callback cannot be null");
         this.reasoningCallback = callback;
-        return this;
     }
 
     @NonNull
@@ -216,6 +215,7 @@ public class AgentClient implements DisposableBean {
                             return context.getConnection().send(payload)
                                     .thenReturn(context);
                         })
+                        .publishOn(Schedulers.boundedElastic())
                         // 获取事件流并处理
                         .flatMapMany(context -> {
                     // 累积完整文本用于保存历史
@@ -225,7 +225,7 @@ public class AgentClient implements DisposableBean {
                     // 如果需要原始响应回调，订阅原始消息流
                     if (rawResponseCb != null) {
                         context.messageStream()
-                                .doOnNext(rawResponseCb::accept)
+                                .doOnNext(rawResponseCb)
                                 .subscribe(
                                     v -> {}, // onNext handled by doOnNext
                                     error -> log.error("Raw response callback error for session: {}", sessionId, error)
@@ -300,10 +300,7 @@ public class AgentClient implements DisposableBean {
         if (threadSession != null) {
             return threadSession;
         }
-        if (defaultSessionId != null) {
-            return defaultSessionId;
-        }
-        return CybotStarConstants.DEFAULT_SESSION_ID;
+        return Objects.requireNonNullElse(defaultSessionId, CybotStarConstants.DEFAULT_SESSION_ID);
     }
 
     /**
@@ -317,12 +314,11 @@ public class AgentClient implements DisposableBean {
         return sessionManager.getContext(sessionId)
                 .map(context -> {
                     List<MessageParam> historyMessages = context.getHistory();
-                    if (historyMessages != null && !historyMessages.isEmpty()) {
+                    if (!historyMessages.isEmpty()) {
                         List<MessageParam> existingParams = finalOptions.getMessageParams();
-                        List<MessageParam> finalParams = new ArrayList<>();
 
                         // 先添加历史消息
-                        finalParams.addAll(historyMessages);
+                        List<MessageParam> finalParams = new ArrayList<>(historyMessages);
 
                         // 再添加现有的 messageParams
                         if (existingParams != null && !existingParams.isEmpty()) {

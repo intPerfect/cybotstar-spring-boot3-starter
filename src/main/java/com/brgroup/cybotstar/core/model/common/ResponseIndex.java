@@ -1,5 +1,7 @@
 package com.brgroup.cybotstar.core.model.common;
 
+import lombok.Getter;
+
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -9,6 +11,7 @@ import java.util.Optional;
  *
  * @author zhiyuan.xi
  */
+@Getter
 public enum ResponseIndex {
     /**
      * 提问已确认
@@ -35,19 +38,13 @@ public enum ResponseIndex {
      */
     REASONING(-8);
 
+    /**
+     * 获取索引值
+     */
     private final int value;
 
     ResponseIndex(int value) {
         this.value = value;
-    }
-
-    /**
-     * 获取索引值
-     *
-     * @return 索引值
-     */
-    public int getValue() {
-        return value;
     }
 
     /**

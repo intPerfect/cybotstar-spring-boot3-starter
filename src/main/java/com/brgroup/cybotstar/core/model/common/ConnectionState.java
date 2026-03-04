@@ -1,10 +1,13 @@
 package com.brgroup.cybotstar.core.model.common;
 
+import lombok.Getter;
+
 /**
  * 连接状态枚举
  *
  * @author zhiyuan.xi
  */
+@Getter
 public enum ConnectionState {
     /**
      * 未连接
@@ -40,10 +43,6 @@ public enum ConnectionState {
 
     ConnectionState(String value) {
         this.value = value;
-    }
-
-    public String getValue() {
-        return value;
     }
 
     public static ConnectionState fromValue(String value) {

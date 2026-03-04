@@ -52,11 +52,10 @@ public class CybotStarAutoConfiguration {
 
         @Override
         public void postProcessBeanFactory(@NonNull ConfigurableListableBeanFactory beanFactory) throws BeansException {
-            if (!(beanFactory instanceof BeanDefinitionRegistry)) {
+            if (!(beanFactory instanceof BeanDefinitionRegistry registry)) {
                 log.warn("{} [Bootstrap] - BeanFactory is not a BeanDefinitionRegistry, skipping", LOG_PREFIX);
                 return;
             }
-            BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
 
             try {
                 CybotStarMultiConfig multiConfig = Binder

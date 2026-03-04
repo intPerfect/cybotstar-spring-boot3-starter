@@ -1,11 +1,14 @@
 package com.brgroup.cybotstar.core.model.common;
 
+import lombok.Getter;
+
 /**
  * WebSocket 响应类型枚举
  * 用于标识不同类型的响应消息
  *
  * @author zhiyuan.xi
  */
+@Getter
 public enum ResponseType {
     /**
      * 心跳响应
@@ -27,19 +30,13 @@ public enum ResponseType {
      */
     TEXT("text");
 
+    /**
+     * 获取响应类型值
+     */
     private final String value;
 
     ResponseType(String value) {
         this.value = value;
-    }
-
-    /**
-     * 获取响应类型值
-     *
-     * @return 响应类型字符串
-     */
-    public String getValue() {
-        return value;
     }
 
     /**
