@@ -4,6 +4,8 @@ import cn.hutool.core.lang.UUID;
 import com.brgroup.cybotstar.spring.annotation.CybotStarAgent;
 import com.brgroup.cybotstar.agent.AgentClient;
 import com.brgroup.cybotstar.agent.model.ModelOptions;
+import com.brgroup.cybotstar.core.health.HealthCheckResult;
+import com.brgroup.cybotstar.core.health.HealthCheckService;
 import com.brgroup.cybotstar.tool.ExampleContext;
 import com.brgroup.cybotstar.tool.StreamRenderer;
 import lombok.extern.slf4j.Slf4j;
@@ -17,11 +19,15 @@ import org.springframework.beans.factory.annotation.Autowired;
  * 展示基础用法和流式响应两种使用方式
  * 使用多配置方式，通过 @CybotStarAgent 注解注入指定的 AgentClient
  * <p>
- * 示例1：基础用法
+ * 示例1：健康检查
+ * - 使用 HealthCheckService 检查连接池健康状态
+ * - 快速判断服务是否可用
+ * <p>
+ * 示例2：基础用法
  * - 直接使用 AgentClient 发送消息并等待完整响应
  * - 使用 .send() 返回 Mono&lt;String&gt; 进行响应式调用
  * <p>
- * 示例2：流式响应
+ * 示例3：流式响应
  * - 链式调用和流式处理
  * - 配置构建器：使用 ModelOptions.builder() 设置模型参数
  * - 原始请求/响应回调：使用 onRawRequest() 和 onRawResponse() 监听 WebSocket 原始数据（用于调试）
@@ -55,18 +61,56 @@ public class AgentExample {
         @CybotStarAgent("finance-agent")
         private AgentClient client;
 
+        @Autowired
+        @CybotStarAgent("finance-agent")
+        private HealthCheckService healthCheckService;
+
         public void execute() {
             try {
-                // ========== 示例1：send() 阻塞响应 ==========
+                // ========== 示例1：健康检查 ==========
+                healthCheckExample();
+
+                // ========== 示例2：send() 阻塞响应 ==========
                 sendExample();
 
-                // ========== 示例2：stream() 流式响应 ========
+                // ========== 示例3：stream() 流式响应 ========
                 streamExample();
 
             } catch (Exception e) {
                 log.error("发生错误", e);
             } finally {
                 client.close();
+            }
+        }
+
+        /**
+         * 示例1：健康检查
+         * 使用 HealthCheckService 检查连接池健康状态
+         */
+        private void healthCheckExample() {
+            log.info("\n=== 示例1：健康检查 ===");
+
+            // 快速健康检查
+            boolean isHealthy = healthCheckService.isHealthy();
+            log.info("快速健康检查: {}", isHealthy ? "健康" : "不健康");
+
+            // 完整健康检查
+            HealthCheckResult result = healthCheckService.check();
+            log.info("健康状态: {}, 消息: {}", result.getStatus(), result.getMessage());
+
+            // 查看连接池详情
+            if (result.getDetails() != null) {
+                log.info("连接池信息:");
+                log.info("  当前连接数: {}", result.getDetails().get("activeConnections"));
+                log.info("  缓存大小: {}", result.getDetails().get("cacheSize"));
+                log.info("  最大会话数: {}", result.getDetails().get("maxSessions"));
+                log.info("  使用率: {}", result.getDetails().get("usageRate"));
+            }
+
+            // 根据状态处理
+            if (result.getStatus() == HealthCheckResult.Status.UNHEALTHY) {
+                log.error("服务不健康，停止请求");
+                return;
             }
         }
 

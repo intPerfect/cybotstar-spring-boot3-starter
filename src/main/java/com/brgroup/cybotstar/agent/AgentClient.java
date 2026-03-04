@@ -72,6 +72,11 @@ public class AgentClient implements DisposableBean {
         log.debug("ReactiveAgentClient initialized, URL: {}", config.getWebsocket().getUrl());
     }
 
+    @NonNull
+    public ConnectionManager getConnectionManager() {
+        return connectionManager;
+    }
+
     // ============================================================================
     // 链式方法
     // ============================================================================

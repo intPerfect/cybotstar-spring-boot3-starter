@@ -4,10 +4,12 @@ import com.brgroup.cybotstar.spring.annotation.CybotStarAgent;
 import com.brgroup.cybotstar.spring.annotation.CybotStarFlow;
 import com.brgroup.cybotstar.agent.config.AgentConfig;
 import com.brgroup.cybotstar.core.config.CybotStarMultiConfig;
+import com.brgroup.cybotstar.core.health.HealthCheckService;
 import com.brgroup.cybotstar.flow.config.FlowConfig;
 import com.brgroup.cybotstar.agent.AgentClient;
 import com.brgroup.cybotstar.flow.FlowClient;
 import com.brgroup.cybotstar.core.util.CybotStarUtils;
+import com.brgroup.cybotstar.spring.actuate.CybotStarHealthIndicator;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.beans.BeansException;
@@ -101,12 +103,36 @@ public class CybotStarAutoConfiguration {
                     CybotStarUtils.validateConfig(config);
                     String beanName = name + "AgentClient";
 
-                    // 注册 BeanDefinition（携带 Qualifier 元数据，供 @CybotStarAgent 匹配）
+                    // 注册 AgentClient Bean
                     GenericBeanDefinition bd = new GenericBeanDefinition();
                     bd.setBeanClass(AgentClient.class);
                     bd.setInstanceSupplier(() -> new AgentClient(config));
                     bd.addQualifier(new AutowireCandidateQualifier(CybotStarAgent.class, name));
                     registry.registerBeanDefinition(beanName, bd);
+
+                    // 注册 HealthCheckService Bean（依赖 AgentClient）
+                    String healthBeanName = name + "HealthCheckService";
+                    GenericBeanDefinition healthBd = new GenericBeanDefinition();
+                    healthBd.setBeanClass(HealthCheckService.class);
+                    healthBd.setInstanceSupplier(() -> {
+                        AgentClient agentClient = beanFactory.getBean(beanName, AgentClient.class);
+                        return new HealthCheckService(agentClient.getConnectionManager());
+                    });
+                    healthBd.setDependsOn(beanName);
+                    healthBd.addQualifier(new AutowireCandidateQualifier(CybotStarAgent.class, name));
+                    registry.registerBeanDefinition(healthBeanName, healthBd);
+
+                    // 注册 HealthIndicator Bean（用于 Spring Boot Actuator）
+                    String indicatorBeanName = name + "CybotStarHealthIndicator";
+                    GenericBeanDefinition indicatorBd = new GenericBeanDefinition();
+                    indicatorBd.setBeanClass(CybotStarHealthIndicator.class);
+                    indicatorBd.setInstanceSupplier(() -> {
+                        HealthCheckService healthCheckService = beanFactory.getBean(healthBeanName, HealthCheckService.class);
+                        return new CybotStarHealthIndicator(healthCheckService, name);
+                    });
+                    indicatorBd.setDependsOn(healthBeanName);
+                    indicatorBd.addQualifier(new AutowireCandidateQualifier(CybotStarAgent.class, name));
+                    registry.registerBeanDefinition(indicatorBeanName, indicatorBd);
 
                     if (hasSingleAgent && name.equals(defaultAgentName)) {
                         registry.registerAlias(beanName, "agentClient");
